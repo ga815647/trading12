@@ -12,6 +12,21 @@ from data.universe import UNIVERSE
 from engine.cost_model import DEFAULT_SHORT_BORROW_COST, apply_round_trip_cost
 
 
+SEQUENCE_PATTERNS = {
+    'trap_buy':          [-1, -1,  1, -1, -1],  
+    'trap_sell':         [ 1,  1, -1,  1,  1],  
+    'sell_5':            [-1, -1, -1, -1, -1],  
+    'buy_5':             [ 1,  1,  1,  1,  1],  
+    'sell_3':            [-1, -1, -1],          
+    'buy_3':             [ 1,  1,  1],          
+    'hesitate_sell':     [ 1,  1,  0, -1, -1],  
+    'hesitate_buy':      [-1, -1,  0,  1,  1],  
+    'sell_buy_sell':     [-1,  1, -1],          
+    'buy_sell_buy':      [ 1, -1,  1],          
+    'accelerate_sell':   [-1, -1, -1,  0, -1],  
+    'accelerate_buy':    [ 1,  1,  1,  0,  1],  
+}
+
 SEMICONDUCTOR_PEERS = {
     "2330",
     "2303",
@@ -112,6 +127,24 @@ def load_market_cache(universe: list[str] | None = None) -> dict[str, pd.DataFra
     return cache
 
 
+def detect_sequence(chip_series: pd.Series, pattern_name: str, threshold: float = 0.0) -> pd.Series:
+    pattern = SEQUENCE_PATTERNS.get(pattern_name)
+    if not pattern:
+        return pd.Series(False, index=chip_series.index)
+    n = len(pattern)
+    pattern_arr = np.array(pattern)
+    
+    sig_arr = np.zeros(len(chip_series), dtype=int)
+    sig_arr[chip_series > threshold] = 1
+    sig_arr[chip_series < -threshold] = -1
+    
+    triggered = pd.Series(False, index=chip_series.index)
+    for i in range(n - 1, len(chip_series)):
+        window = sig_arr[i - n + 1: i + 1]
+        if np.array_equal(window, pattern_arr):
+            triggered.iloc[i] = True
+    return triggered
+
 def build_signal_series(stock_id: str, frame: pd.DataFrame, hypothesis: dict[str, Any]) -> pd.Series:
     df = frame
     params = hypothesis.get("params", {})
@@ -119,6 +152,9 @@ def build_signal_series(stock_id: str, frame: pd.DataFrame, hypothesis: dict[str
     consecutive_n = int(params.get("consecutive_n", 3))
     indicator_val = float(params.get("indicator_val", 30))
     bar_body_pct = float(params.get("bar_body_pct", 0.03))
+    pattern_name = str(params.get("pattern_name", "buy_3"))
+    chip_days = int(params.get("chip_days", 3))
+    price_days = int(params.get("price_days", 1))
     template_id = str(hypothesis.get("id", ""))
 
     if not is_supported_hypothesis(hypothesis):
@@ -234,6 +270,34 @@ def build_signal_series(stock_id: str, frame: pd.DataFrame, hypothesis: dict[str
         signal = df["Close"].pct_change(consecutive_n) < -bar_body_pct
     elif template_id == "J05":
         signal = (df["High"] - df["Low"]) / df["Open"].replace(0, np.nan) > bar_body_pct * 2
+    elif template_id == "K01":
+        signal = detect_sequence(df["foreign_net"], pattern_name, threshold_a)
+    elif template_id == "K02":
+        signal = detect_sequence(df["trust_net"], pattern_name, threshold_a)
+    elif template_id == "K03":
+        signal = detect_sequence(df["inst_total_net"], pattern_name, threshold_a)
+    elif template_id == "K04":
+        signal = detect_sequence(df["foreign_net"], pattern_name, threshold_a) & (df["margin_balance"].diff(3) > threshold_a * 5)
+    elif template_id == "K05":
+        signal = detect_sequence(df["foreign_net"], pattern_name, threshold_a) & (df["stoch_14"] < indicator_val)
+    elif template_id == "L01":
+        inst_buy = df["inst_total_net"] > 0
+        inst_buy_streak = inst_buy.rolling(chip_days).sum() == chip_days
+        limit_up = ((df["Close"] - df["PrevClose"]) / df["PrevClose"].replace(0, np.nan)) >= 0.095
+        limit_up_streak = limit_up.rolling(price_days).sum() == price_days
+        signal = inst_buy_streak.shift(price_days).fillna(False) & limit_up_streak & (df["stoch_14"] < 80)
+    elif template_id == "L02":
+        inst_sell = df["inst_total_net"] < 0
+        inst_sell_streak = inst_sell.rolling(chip_days).sum() == chip_days
+        limit_down = ((df["Close"] - df["PrevClose"]) / df["PrevClose"].replace(0, np.nan)) <= -0.095
+        limit_down_streak = limit_down.rolling(price_days).sum() == price_days
+        signal = inst_sell_streak.shift(price_days).fillna(False) & limit_down_streak & (df["stoch_14"] > 20)
+    elif template_id == "L03":
+        inst_buy = df["inst_total_net"] > 0
+        inst_buy_streak = inst_buy.rolling(chip_days).sum() == chip_days
+        limit_up = ((df["Close"] - df["PrevClose"]) / df["PrevClose"].replace(0, np.nan)) >= 0.095
+        limit_up_streak = limit_up.rolling(price_days).sum() == price_days
+        signal = inst_buy_streak.shift(price_days).fillna(False) & limit_up_streak & (df["inst_total_net"] < 0)
     elif prefix == "E":
         signal = df["rsi_14"] < indicator_val
     else:
@@ -245,7 +309,7 @@ def infer_direction(hypothesis: dict[str, Any]) -> str:
     template_id = str(hypothesis.get("id", ""))
     if template_id in {"G03"}:
         return "exit"
-    if template_id in {"J01", "J02", "J03"}:
+    if template_id in {"J01", "J02", "J03", "L02"}:
         return "short"
     return "long"
 

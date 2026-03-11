@@ -66,6 +66,20 @@ HYPOTHESIS_TEMPLATES = [
     {"id": "J03", "desc": "Retail sentiment proxy becomes extreme."},
     {"id": "J04", "desc": "Market panic triggers mean reversion."},
     {"id": "J05", "desc": "Breadth imbalance reaches an extreme."},
+    {"id": "K01", "desc": "Foreign chip pattern sequence generates signal."},
+    {"id": "K02", "desc": "Investment trust pattern sequence generates signal."},
+    {"id": "K03", "desc": "Total institutional net buy/sell pattern sequence."},
+    {"id": "K04", "desc": "Foreign pattern combined with margin expansion."},
+    {"id": "K05", "desc": "Foreign pattern combined with KD oversold."},
+    {"id": "L01", "desc": "Institutional buy streak -> Limit up streak -> KD bull."},
+    {"id": "L02", "desc": "Institutional sell streak -> Limit down streak -> KD bear."},
+    {"id": "L03", "desc": "Institutional buy streak -> Limit up streak -> Inst sells on same day."},
+]
+
+SEQUENCE_PATTERNS_KEYS = [
+    "trap_buy", "trap_sell", "sell_5", "buy_5", "sell_3", "buy_3", 
+    "hesitate_sell", "hesitate_buy", "sell_buy_sell", "buy_sell_buy",
+    "accelerate_sell", "accelerate_buy"
 ]
 
 PARAM_GRIDS = {
@@ -73,6 +87,13 @@ PARAM_GRIDS = {
     "consecutive_n": [2, 3, 5, 8, 10],
     "indicator_val": [20, 25, 30, 35, 40],
     "bar_body_pct": [0.02, 0.03, 0.05, 0.07],
+    "horizon_days": [10, 15, 20, 30, 45, 60],
+    "pattern_name": SEQUENCE_PATTERNS_KEYS,
+}
+
+CROSS_SEQUENCE_PARAM_GRIDS = {
+    "chip_days": [2, 3, 4, 5],
+    "price_days": [1, 2, 3],
     "horizon_days": [10, 15, 20, 30, 45, 60],
 }
 
@@ -91,9 +112,11 @@ def generate_batch(
     if should_skip(template["id"]):
         return []
     rng = random.Random(random_seed or template["id"])
-    all_combos = list(itertools.product(*PARAM_GRIDS.values()))
+    
+    grids = CROSS_SEQUENCE_PARAM_GRIDS if template["id"].startswith("L") else PARAM_GRIDS
+    all_combos = list(itertools.product(*grids.values()))
     sampled = rng.sample(all_combos, min(batch_size, len(all_combos)))
-    keys = list(PARAM_GRIDS.keys())
+    keys = list(grids.keys())
     return [
         {
             **template,
