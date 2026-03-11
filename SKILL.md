@@ -37,4 +37,4 @@
 - 執行 git add、git commit、git push
 - 建立和修改 Dockerfile、requirements.txt
 - 讀取和修改 SKILL.md 本身（需與開發者確認後執行）
-- 每次完成程式碼修改後，應主動執行 git add、git commit、git push，確保 WSL2 本機可透過 git pull 同步
+- 每次完成程式碼修改後，必須先執行 git add、git commit、git push 並確認 push 成功，才可提示使用者到 WSL2 執行 git pull 同步
