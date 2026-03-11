@@ -93,8 +93,27 @@ def _enrich(frame: pd.DataFrame) -> pd.DataFrame:
     return df.replace([np.inf, -np.inf], np.nan)
 
 
+def prepare_market_frame(stock_id: str) -> pd.DataFrame | None:
+    try:
+        frame = merge_market_data(stock_id)
+    except FileNotFoundError:
+        return None
+    if len(frame) < 90:
+        return None
+    return _enrich(frame)
+
+
+def load_market_cache(universe: list[str] | None = None) -> dict[str, pd.DataFrame]:
+    cache: dict[str, pd.DataFrame] = {}
+    for stock_id in universe or UNIVERSE:
+        prepared = prepare_market_frame(stock_id)
+        if prepared is not None:
+            cache[stock_id] = prepared
+    return cache
+
+
 def build_signal_series(stock_id: str, frame: pd.DataFrame, hypothesis: dict[str, Any]) -> pd.Series:
-    df = _enrich(frame)
+    df = frame
     params = hypothesis.get("params", {})
     threshold_a = float(params.get("threshold_a", 200))
     consecutive_n = int(params.get("consecutive_n", 3))
@@ -293,7 +312,7 @@ def summarize_hypothesis(hypothesis: dict[str, Any], trades: list[dict[str, Any]
         "sample_count": len(trades),
         "trade_dates": [trade["exit_date"] for trade in trades],
         "trade_returns": [trade["net_return"] for trade in trades],
-        "trades": trades,
+        "recent_trade_pnls": [trade["pnl"] for trade in trades[-100:]],
     }
     if not trades:
         summary.update(
@@ -343,26 +362,23 @@ def summarize_hypothesis(hypothesis: dict[str, Any], trades: list[dict[str, Any]
 def run_hypothesis_backtest(
     hypothesis: dict[str, Any],
     universe: list[str] | None = None,
+    market_cache: dict[str, pd.DataFrame] | None = None,
 ) -> dict[str, Any]:
     all_trades: list[dict[str, Any]] = []
-    for stock_id in universe or UNIVERSE:
-        try:
-            frame = merge_market_data(stock_id)
-        except FileNotFoundError:
-            continue
-        if len(frame) < 90:
-            continue
+    frames = market_cache if market_cache is not None else load_market_cache(universe)
+    for stock_id, frame in frames.items():
         stock_trades = backtest_stock(stock_id, frame, hypothesis)
         all_trades.extend(stock_trades)
     return summarize_hypothesis(hypothesis, all_trades)
 
 
-def evaluate_latest_signal(stock_id: str, hypothesis: dict[str, Any]) -> dict[str, Any] | None:
-    try:
-        frame = merge_market_data(stock_id)
-    except FileNotFoundError:
-        return None
-    if len(frame) < 60:
+def evaluate_latest_signal(
+    stock_id: str,
+    hypothesis: dict[str, Any],
+    market_cache: dict[str, pd.DataFrame] | None = None,
+) -> dict[str, Any] | None:
+    frame = market_cache.get(stock_id) if market_cache is not None else prepare_market_frame(stock_id)
+    if frame is None or len(frame) < 60:
         return None
     signal = build_signal_series(stock_id, frame, hypothesis)
     if not bool(signal.iloc[-1]):

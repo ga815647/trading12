@@ -13,11 +13,11 @@ from config.config import SIGNAL_DIR, ensure_runtime_dirs
 from config.encrypt import load_encrypted_json, save_signal
 
 
-def rolling_winrate_by_trades(trades: list[dict[str, Any]], window: int = 20) -> float | None:
-    if len(trades) < window:
+def rolling_winrate_by_pnls(pnls: list[float], window: int = 20) -> float | None:
+    if len(pnls) < window:
         return None
-    recent = trades[-window:]
-    wins = sum(1 for trade in recent if float(trade.get("pnl", 0.0)) > 0)
+    recent = pnls[-window:]
+    wins = sum(1 for pnl in recent if float(pnl) > 0)
     return wins / window
 
 
@@ -25,7 +25,7 @@ def mark_signal_decay(signals: list[dict[str, Any]], window: int = 20) -> list[d
     updated: list[dict[str, Any]] = []
     for signal in signals:
         item = dict(signal)
-        rolling = rolling_winrate_by_trades(item.get("trades", []), window=window)
+        rolling = rolling_winrate_by_pnls(item.get("recent_trade_pnls", []), window=window)
         item["rolling_win_rate"] = rolling
         item["excluded"] = rolling is not None and rolling < 0.5
         updated.append(item)

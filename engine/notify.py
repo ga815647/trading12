@@ -13,10 +13,9 @@ if str(ROOT_DIR) not in sys.path:
 from config.config import SETTINGS
 
 
-def send_signal(message: str) -> None:
+def send_signal(message: str) -> bool:
     if not SETTINGS.telegram_bot_token or not SETTINGS.telegram_chat_id:
-        print(message)
-        return
+        return False
     url = f"https://api.telegram.org/bot{SETTINGS.telegram_bot_token}/sendMessage"
     response = requests.post(
         url,
@@ -24,6 +23,7 @@ def send_signal(message: str) -> None:
         timeout=15,
     )
     response.raise_for_status()
+    return True
 
 
 def build_signal_message(signal: dict[str, Any]) -> str:

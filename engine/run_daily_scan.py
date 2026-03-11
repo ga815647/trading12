@@ -16,15 +16,16 @@ from engine.portfolio import vote_signals
 
 
 def run_daily_scan(signal_library: list[dict], symbols: list[str] | None = None) -> list[dict]:
-    from engine.backtest import evaluate_latest_signal
+    from engine.backtest import evaluate_latest_signal, load_market_cache
 
     triggered: list[dict] = []
     target_symbols = set(symbols or UNIVERSE)
+    market_cache = load_market_cache(sorted(target_symbols))
     for hypothesis in signal_library:
         if hypothesis.get("excluded"):
             continue
         for stock_id in target_symbols:
-            trigger = evaluate_latest_signal(stock_id, hypothesis)
+            trigger = evaluate_latest_signal(stock_id, hypothesis, market_cache=market_cache)
             if trigger:
                 triggered.append(trigger)
     return vote_signals(triggered)
@@ -52,8 +53,10 @@ def main() -> None:
         return
     for signal in voted:
         message = build_signal_message(signal)
-        send_signal(message)
+        sent = send_signal(message)
         print(message)
+        if sent:
+            print("Sent to Telegram.")
 
 
 if __name__ == "__main__":
