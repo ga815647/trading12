@@ -1,0 +1,12 @@
+anthropic==0.74.1
+backtesting==0.6.5
+cryptography==46.0.2
+FinMind==1.9.6
+numpy==1.26.4
+pandas==2.2.3
+pyarrow==18.1.0
+python-dotenv==1.0.1
+python-telegram-bot==22.1
+requests==2.32.3
+scipy==1.15.3
+statsmodels==0.14.4
