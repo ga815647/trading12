@@ -21,13 +21,17 @@ def rolling_winrate_by_pnls(pnls: list[float], window: int = 20) -> float | None
     return wins / window
 
 
-def mark_signal_decay(signals: list[dict[str, Any]], window: int = 20) -> list[dict[str, Any]]:
+def mark_signal_decay(
+    signals: list[dict[str, Any]],
+    window: int = 20,
+    min_rolling_win_rate: float = 0.5,
+) -> list[dict[str, Any]]:
     updated: list[dict[str, Any]] = []
     for signal in signals:
         item = dict(signal)
         rolling = rolling_winrate_by_pnls(item.get("recent_trade_pnls", []), window=window)
         item["rolling_win_rate"] = rolling
-        item["excluded"] = rolling is not None and rolling < 0.5
+        item["excluded"] = rolling is not None and rolling < min_rolling_win_rate
         updated.append(item)
     return updated
 
@@ -37,6 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", default=str(SIGNAL_DIR / "library.enc"))
     parser.add_argument("--output", default=str(SIGNAL_DIR / "library.enc"))
     parser.add_argument("--window", type=int, default=20)
+    parser.add_argument("--min-rolling-win-rate", type=float, default=0.5)
     return parser.parse_args()
 
 
@@ -47,10 +52,17 @@ def main() -> None:
     if not input_path.exists():
         raise SystemExit(f"Signal library not found: {input_path}")
     signals = load_encrypted_json(input_path)
-    updated = mark_signal_decay(signals, window=args.window)
+    updated = mark_signal_decay(
+        signals,
+        window=args.window,
+        min_rolling_win_rate=args.min_rolling_win_rate,
+    )
     output = save_signal(updated, args.output)
     excluded = sum(1 for item in updated if item.get("excluded"))
-    print(f"Decay check complete: {excluded} signals marked excluded in {output}")
+    print(
+        f"Decay check complete: {excluded} signals marked excluded in {output} "
+        f"(window={args.window}, min_rolling_win_rate={args.min_rolling_win_rate})"
+    )
 
 
 if __name__ == "__main__":

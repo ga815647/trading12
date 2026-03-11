@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import glob
 import sys
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,31 @@ def _cycle_pass(trade_dates: list[str], minimum: int = 30) -> tuple[bool, dict[s
     return all(count >= minimum for count in counts.values()), counts
 
 
+def dedupe_backtests(backtests: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: dict[str, dict[str, Any]] = {}
+    for item in backtests:
+        key = str(item.get("hypothesis_id") or item.get("id") or "")
+        if not key:
+            continue
+        current = deduped.get(key)
+        if current is None:
+            deduped[key] = item
+            continue
+        current_score = (
+            float(current.get("sample_count", 0)),
+            float(current.get("sharpe", 0.0)),
+            -float(current.get("p_value", 1.0)),
+        )
+        next_score = (
+            float(item.get("sample_count", 0)),
+            float(item.get("sharpe", 0.0)),
+            -float(item.get("p_value", 1.0)),
+        )
+        if next_score > current_score:
+            deduped[key] = item
+    return list(deduped.values())
+
+
 def validate_backtests(
     backtests: list[dict[str, Any]],
     min_sample_count: int = 200,
@@ -75,6 +101,7 @@ def validate_backtests(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Validate backtest results.")
     parser.add_argument("--input", default=str(BACKTEST_DIR / "batch_001.enc"))
+    parser.add_argument("--input-glob")
     parser.add_argument("--output", default=str(SIGNAL_DIR / "library.enc"))
     return parser.parse_args()
 
@@ -82,13 +109,26 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     ensure_runtime_dirs()
-    input_path = Path(args.input)
-    if not input_path.exists():
-        raise SystemExit(f"Backtest file not found: {input_path}")
-    backtests = load_encrypted_json(input_path)
+    backtests: list[dict[str, Any]] = []
+    if args.input_glob:
+        matches = sorted(glob.glob(args.input_glob))
+        if not matches:
+            raise SystemExit(f"No backtest files matched: {args.input_glob}")
+        for match in matches:
+            backtests.extend(load_encrypted_json(Path(match)))
+    else:
+        input_path = Path(args.input)
+        if not input_path.exists():
+            raise SystemExit(f"Backtest file not found: {input_path}")
+        backtests = load_encrypted_json(input_path)
+    raw_count = len(backtests)
+    backtests = dedupe_backtests(backtests)
     validated = validate_backtests(backtests)
     output = save_signal(validated, args.output)
-    print(f"Validated {len(validated)} signals into {output}")
+    print(
+        f"Validated {len(validated)} signals into {output} "
+        f"(raw={raw_count}, deduped={len(backtests)})"
+    )
 
 
 if __name__ == "__main__":

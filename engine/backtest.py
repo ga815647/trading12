@@ -251,6 +251,8 @@ def infer_direction(hypothesis: dict[str, Any]) -> str:
 
 
 def _trade_return(direction: str, entry_open: float, exit_close: float) -> float:
+    if entry_open <= 0 or exit_close <= 0:
+        raise ValueError("Trade prices must be positive.")
     if direction == "short":
         raw = (entry_open - exit_close) / entry_open
         return raw - DEFAULT_SHORT_BORROW_COST
@@ -277,10 +279,16 @@ def backtest_stock(
             break
         entry_open = float(frame["Open"].iloc[entry_idx])
         prev_close = float(frame["PrevClose"].iloc[entry_idx])
+        if entry_open <= 0 or prev_close <= 0:
+            idx += 1
+            continue
         if is_limit_up(entry_open, prev_close) or is_limit_down(entry_open, prev_close):
             idx += 1
             continue
         exit_close = float(frame["Close"].iloc[exit_idx])
+        if exit_close <= 0:
+            idx += 1
+            continue
         raw_return = _trade_return(direction, entry_open, exit_close)
         net_return = apply_round_trip_cost(raw_return)
         trades.append(
