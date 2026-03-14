@@ -76,16 +76,54 @@ def build_signal_message(signal: dict[str, Any], pipeline: str = "long") -> str:
         lines.append(f"• 目前估計損益：{pnl_str}")
         
     # 處理其他技術/籌碼訊號
+    GROUP_DISPLAY = {
+        "chip":          "籌碼",
+        "chip_sequence": "籌碼序列",
+        "composite":     "複合序列",
+        "momentum":      "動能",
+        "mean_reversion":"均值回歸",
+        "price_volume":  "量價",
+        "contrarian":    "逆勢",
+        "sentiment":     "情緒",
+        "calendar":      "時間",
+        "group_behavior":"群體行為",
+        "cross_stock":   "跨股",
+        "cross_market":  "跨市場",
+    }
+
+    # 在訊號標題後先加現價（只加一次，不在迴圈裡重複）
+    current_close = signal.get("signals", [{}])[0].get("close", 0.0) if signal.get("signals") else 0.0
+    if current_close > 0:
+        stop_loss_price = current_close * 0.92
+        lines.append(f"• 現價：{current_close:.2f}　參考停損：{stop_loss_price:.2f}（-8%）")
+
     for item in signal.get("signals", []):
         if item.get("group") == "time":
             continue
-        signal_type = "A-籌碼" if str(item['id']).startswith(('A', 'K', 'L')) else "技術指標"
-        desc = item['desc']
-        horizon_days = item['horizon_days']
-        lines.append(f"[{signal_type}] {desc}")
-        lines.append(f"• 建議持有：{horizon_days} 個交易日")
-        
-        # 輔助資訊（如果有 PnL 資訊也顯示，例如賣出管線的技術出場）
+        group = item.get("group", "")
+        signal_type = GROUP_DISPLAY.get(group, "技術指標")
+        horizon_days = item.get("horizon_days", 10)
+        win_rate = item.get("win_rate", 0.0)
+        sample_count = item.get("sample_count", 0)
+        sharpe = item.get("portfolio_sharpe", 0.0)
+
+        # 把 desc 的 "Matrix Strategy: Trigger X with filter Y" 轉成可讀格式
+        raw_desc = item.get("desc", "")
+        if "Trigger" in raw_desc and "filter" in raw_desc:
+            # 例：Matrix Strategy: Trigger E03 with filter PZ_CHEAP
+            # → 顯示：E03 × PZ_CHEAP
+            try:
+                trigger_part = raw_desc.split("Trigger ")[1].split(" with")[0]
+                filter_part  = raw_desc.split("filter ")[1] if "filter " in raw_desc else "NONE"
+                display_desc = f"{trigger_part} × {filter_part}" if filter_part != "NONE" else trigger_part
+            except Exception:
+                display_desc = raw_desc
+        else:
+            display_desc = raw_desc
+
+        lines.append(f"[{signal_type}] {display_desc}")
+        lines.append(f"• 持有：{horizon_days}日　勝率：{win_rate:.1%}（{sample_count}筆）　Sharpe：{sharpe:.2f}")
+
         if pipeline == "exit" and "pnl_ext" in item:
             pnl_str = f"{item['pnl_ext']:+.1%}"
             lines.append(f"• 估計損益：{pnl_str}")

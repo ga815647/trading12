@@ -707,23 +707,37 @@ def evaluate_latest_signal(
     stock_id: str,
     hypothesis: dict[str, Any],
     market_cache: dict[str, pd.DataFrame] | None = None,
+    force: bool = False,
 ) -> dict[str, Any] | None:
     frame = market_cache.get(stock_id) if market_cache is not None else prepare_market_frame(stock_id)
     if frame is None or len(frame) < 60:
         return None
     signal = build_signal_series(stock_id, frame, hypothesis)
-    if not bool(signal.iloc[-1]):
+
+    # 只在訊號首次觸發時推播（從 False 變成 True）
+    # 若今天觸發且昨天也觸發，視為持續訊號，不重複推播
+    signal_today     = bool(signal.iloc[-1])
+    signal_yesterday = bool(signal.iloc[-2]) if len(signal) >= 2 else False
+
+    if not signal_today:
         return None
+    if signal_yesterday and not force:
+        # 訊號持續，非新訊號，跳過（force=True 時強制推播）
+        return None
+
     latest = frame.iloc[-1]
     return {
-        "stock_id": stock_id,
-        "direction": infer_direction(hypothesis),
+        "stock_id":     stock_id,
+        "direction":    infer_direction(hypothesis),
         "hypothesis_id": hypothesis.get("hypothesis_id"),
-        "signal_id": hypothesis.get("signal_id"),
-        "id": hypothesis.get("id"),
-        "desc": hypothesis.get("desc"),
-        "group": hypothesis.get("group", str(hypothesis.get("id", ""))[:1]),
+        "signal_id":    hypothesis.get("signal_id"),
+        "id":           hypothesis.get("id"),
+        "desc":         hypothesis.get("desc"),
+        "group":        hypothesis.get("group", str(hypothesis.get("id", ""))[:1]),
         "horizon_days": int(hypothesis.get("params", {}).get("horizon_days", 10)),
-        "close": float(latest["Close"]),
-        "open": float(latest["Open"]),
+        "close":        float(latest["Close"]),
+        "open":         float(latest["Open"]),
+        "win_rate":     float(hypothesis.get("win_rate", 0.0)),
+        "sample_count": int(hypothesis.get("sample_count", 0)),
+        "portfolio_sharpe": float(hypothesis.get("portfolio_sharpe", 0.0)),
     }

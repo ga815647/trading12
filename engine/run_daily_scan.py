@@ -62,7 +62,7 @@ def check_time_exits(detailed_holdings: list[dict], market_cache: dict[str, pd.D
     return exit_signals
 
 
-def run_daily_scan(signal_library: list[dict], symbols: list[str] | None = None, paper_mode: bool = False) -> dict[str, list[dict]]:
+def run_daily_scan(signal_library: list[dict], symbols: list[str] | None = None, paper_mode: bool = False, force_notify: bool = False) -> dict[str, list[dict]]:
     """
     運行三管線每日掃描
     paper_mode=True 時忽略 portfolio.json，對全市場推播所有訊號（實測用）
@@ -108,7 +108,7 @@ def run_daily_scan(signal_library: list[dict], symbols: list[str] | None = None,
             continue
             
         for stock_id in target_universe:
-            trigger = evaluate_latest_signal(stock_id, hypothesis, market_cache=market_cache)
+            trigger = evaluate_latest_signal(stock_id, hypothesis, market_cache=market_cache, force=force_notify)
             if trigger:
                 # 增強 PnL 回報 (針對賣出管線)
                 if direction == "exit":
@@ -137,6 +137,10 @@ def parse_args() -> argparse.Namespace:
         "--paper-mode", action="store_true", default=False,
         help="Paper mode: scan full UNIVERSE for all pipelines, ignoring portfolio.json (testing use)."
     )
+    parser.add_argument(
+        "--force-notify", action="store_true", default=False,
+        help="強制推播所有今日觸發的訊號，忽略首次觸發限制（測試用）"
+    )
     return parser.parse_args()
 
 
@@ -151,7 +155,7 @@ def main() -> None:
     signal_library = load_signals(input_path)
     if args.paper_mode:
         print("[Paper Mode] 實測模式：忽略持倉，推播所有管線的全市場訊號。")
-    voted_signals = run_daily_scan(signal_library, symbols=args.symbols, paper_mode=args.paper_mode)
+    voted_signals = run_daily_scan(signal_library, symbols=args.symbols, paper_mode=args.paper_mode, force_notify=args.force_notify)
     
     # 處理各管線的訊號
     total_sent = 0
