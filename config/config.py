@@ -21,7 +21,7 @@ OOS_YEARS = 2  # Time-based Out-Of-Sample period in years
 MIN_CYCLE_SAMPLES = 30
 MIN_WEIGHTED_WIN_RATE = 0.51
 MIN_RECENT_2Y_WIN_RATE = 0.50
-MIN_RECENT_2Y_TRADES = 10
+MIN_RECENT_2Y_TRADES = 5  # 觸發頻率低的策略在近 2 年可能只有 5~9 次，不應因此淘汰
 TIME_DECAY_LAMBDA = 1.0
 
 # Edge defense (liquidity). FinMind Volume = shares. 1 lot = 1000 shares.

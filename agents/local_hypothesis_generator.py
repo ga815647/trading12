@@ -10,7 +10,7 @@ if str(ROOT_DIR) not in sys.path:
 
 from config.config import HYPOTHESIS_DIR, ensure_runtime_dirs
 
-def generate_local_factory(max_count: int = 1000):
+def generate_local_factory(max_count: int = 3000):
     """
     Multi-Layered Matrix Strategy Factory
     Combines TRIGGERS and FILTERS with parameter grids.
@@ -57,6 +57,47 @@ def generate_local_factory(max_count: int = 1000):
         "K05": {"threshold_a": [100, 500, 2000], "indicator_val": [20, 30]},
         "M04": {"divergence_threshold": [0.5, 0.7, 0.9]},
         "M05": {"divergence_threshold": [0.5, 0.7, 0.9]},
+    }
+
+    SIMPLE_TRIGGERS = {
+        # 單一籌碼條件（不要求連續天數，只看當日）
+        "A03_SIMPLE": {
+            "threshold_a": [200, 500, 1000, 2000, 3000],
+            "consecutive_n": [1, 2, 3],
+        },
+        # RSI 超賣（單條件，觸發頻率高）
+        "E01_SIMPLE": {
+            "indicator_val": [25, 30, 35, 40],
+        },
+        # KD 超賣
+        "E02_SIMPLE": {
+            "indicator_val": [20, 25, 30],
+        },
+        # 外資買超（單日，門檻低）
+        "FOREIGN_NET_SIMPLE": {
+            "threshold_a": [100, 200, 500, 1000],
+            "consecutive_n": [1, 2],
+        },
+        # 成交量放大
+        "B03_SIMPLE": {
+            "bar_body_pct": [0.3, 0.5, 0.8],  # volume_ma_5 > volume_ma_20 * (1+pct)
+            "consecutive_n": [1, 2, 3],
+        },
+        # 近期跌深反彈
+        "E03_SIMPLE": {
+            "bar_body_pct": [0.05, 0.08, 0.10, 0.12],
+            "consecutive_n": [5, 10, 15, 20],
+        },
+    }
+
+    # Mapping for backtest.py compatibility
+    TRIGGER_MAP = {
+        "A03_SIMPLE": "A03",
+        "E01_SIMPLE": "E01",
+        "E02_SIMPLE": "E02",
+        "FOREIGN_NET_SIMPLE": "A03",
+        "B03_SIMPLE": "B03",
+        "E03_SIMPLE": "E03",
     }
 
     # State Filters (The 'Where/When')
@@ -114,6 +155,22 @@ def generate_local_factory(max_count: int = 1000):
                     "params": params
                 })
 
+    # Combine SIMPLE_TRIGGERS with FILTERS
+    for st_id, st_grid in SIMPLE_TRIGGERS.items():
+        t_id_mapped = TRIGGER_MAP.get(st_id, st_id)
+        for f_id, f_grid in FILTERS.items():
+            combined_grid = {**st_grid, **f_grid, **common_params}
+            keys = list(combined_grid.keys())
+            values = list(combined_grid.values())
+            
+            for combination in itertools.product(*values):
+                params = dict(zip(keys, combination))
+                all_combinations.append({
+                    "trigger_id": t_id_mapped,
+                    "filter_id": f_id,
+                    "params": params
+                })
+
     # Shuffle to ensure diversity when capped
     random.shuffle(all_combinations)
     
@@ -161,7 +218,7 @@ def generate_local_factory(max_count: int = 1000):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--max-count", type=int, default=1000)
+    parser.add_argument("--max-count", type=int, default=3000)
     args = parser.parse_args()
     
     generate_local_factory(max_count=args.max_count)
