@@ -88,9 +88,12 @@ def run_many(
             progress.close()
         return results
 
+    import multiprocessing
+
     # Multiprocessing
     results: list[dict | None] = [None] * len(hypotheses)
-    executor = ProcessPoolExecutor(max_workers=workers, initializer=_init_worker)
+    ctx = multiprocessing.get_context("spawn")
+    executor = ProcessPoolExecutor(max_workers=workers, mp_context=ctx, initializer=_init_worker)
     
     progress = None
     if show_progress:
