@@ -18,6 +18,9 @@ GROUP_MAP = {
     "H": "contrarian",
     "I": "cross_market",
     "J": "sentiment",
+    "K": "chip_sequence",    # 籌碼序列
+    "L": "composite",        # 跨資料源複合序列
+    "M": "group_behavior",   # 群體行為序列與背離
 }
 
 

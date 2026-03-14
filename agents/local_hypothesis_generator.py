@@ -19,30 +19,59 @@ def generate_local_factory(max_count: int = 1000):
     
     # Core Triggers (The 'What')
     TRIGGERS = {
-        "A01": {"threshold_a": [100, 400, 1000], "consecutive_n": [3, 5]},
-        "A03": {"threshold_a": [200, 600, 1500], "consecutive_n": [1, 3]},
-        "B02": {"bar_body_pct": [0.03, 0.05], "consecutive_n": [5]},
-        "B03": {"bar_body_pct": [0.02, 0.07], "consecutive_n": [3, 10]},
-        "J06": {"threshold_a": [500, 1500], "indicator_val": [30, 50]},
-        "K01": {"threshold_a": [100, 500, 2000], "pattern_name": ["buy_3", "buy_5"]}
+        # --- A 類：籌碼集中 (Chip Accumulation) ---
+        "A01": {"threshold_a": [50, 100, 300, 800, 2000], "consecutive_n": [3, 5, 7]},
+        "A03": {"threshold_a": [100, 300, 800, 2000], "consecutive_n": [1, 3, 5]},
+        # --- B 類：動能 (Momentum) ---
+        "B02": {"bar_body_pct": [0.02, 0.03, 0.05], "consecutive_n": [3, 5, 7]},
+        "B03": {"bar_body_pct": [0.02, 0.04, 0.07], "consecutive_n": [3, 5, 10]},
+        # --- J 類：情緒 (Sentiment) ---
+        "J06": {"threshold_a": [300, 800, 2000], "indicator_val": [20, 30, 50]},
+        # --- K 類：籌碼序列 (Chip Sequences) ---
+        "K01": {"threshold_a": [100, 500, 2000], "pattern_name": ["buy_3", "buy_5", "buy_7"]},
+        "K02": {"threshold_a": [100, 500, 2000], "pattern_name": ["buy_3", "buy_5"]},
+        "K03": {"threshold_a": [100, 500, 2000], "pattern_name": ["buy_3", "buy_5"]},
+        # --- L 類：跨資料源複合序列 (Multi-Source Sequences) ---
+        "L01": {"threshold_a": [100, 500], "consecutive_n": [3, 5],
+                "chip_days": [3, 5], "price_days": [1, 3]},
+        # --- M 類：群體行為序列與背離 (Group Behavior Sequences) ---
+        "M01": {"divergence_threshold": [0.5, 0.7, 0.9]},  # 外資買 + 投信追
+        "M02": {"divergence_threshold": [0.5, 0.7, 0.9]},  # 外資買 + 融資退
+        "M03": {"divergence_threshold": [0.5, 0.7, 0.9]},  # 法人合買 + 融資退
     }
 
     # State Filters (The 'Where/When')
     FILTERS = {
-        "NONE": {}, # No filter
-        "E01": {"indicator_val": [20, 40]},      # RSI Oversold
-        "E02": {"indicator_val": [25, 45]},      # Stoch Oversold
-        "G01": {"bar_body_pct": [0.02, 0.05]},   # Vol break
-        "FLT_UP_TREND": {},                      # 多頭排列 (Close > 20MA & 20MA Up)
-        "FLT_VOL_SHRINK": {},                    # 量縮洗盤 (Prev Vol < 0.8 * 5MA Vol)
-        "FLT_KD_OVERSOLD": {},                   # KD 落底 (K < 30 & D < 30)
-        "TVA1": {"state_filter": [1]},           # Up-Trend, Accelerating
-        "TVA5": {"state_filter": [5]},           # Down-Trend, Accelerating Up
-        "PZ_BREAKDOWN": {"price_zone": [0]},     # 破壞價 (Price relative position <= 0.1)
-        "PZ_CHEAP": {"price_zone": [1]},         # 便宜區 (0.1 - 0.3)
-        "PZ_FAIR": {"price_zone": [2]},          # 合理區 (0.3 - 0.7)
-        "PZ_EXPENSIVE": {"price_zone": [3]},     # 昂貴區 (0.7 - 0.9)
-        "PZ_BUBBLE": {"price_zone": [4]}         # 盤子價 (Price relative position > 0.9)
+        "NONE": {}, # No filter — baseline
+
+        # --- 技術面過濾器 ---
+        "E01": {"indicator_val": [20, 35]},       # RSI Oversold
+        "E02": {"indicator_val": [25, 40]},       # Stoch Oversold
+        "G01": {"bar_body_pct": [0.02, 0.05]},    # Vol break
+        "FLT_UP_TREND": {},                       # 多頭排列
+        "FLT_VOL_SHRINK": {},                     # 量縮洗盤
+        "FLT_KD_OVERSOLD": {},                    # KD 落底
+
+        # --- T/V/A 八狀態系統 (全部 8 個) ---
+        "TVA1": {"state_filter": [1]},  # T+, V+, A+  全面多頭加速 → 追漲
+        "TVA2": {"state_filter": [2]},  # T+, V+, A-  多頭但加速轉弱 → 獲利了結觀察
+        "TVA3": {"state_filter": [3]},  # T+, V-, A+  多頭但速度轉負（回調中）
+        "TVA4": {"state_filter": [4]},  # T+, V-, A-  多頭但全面轉弱 → 賣出前夕
+        "TVA5": {"state_filter": [5]},  # T-, V+, A+  空頭中反彈加速 → 強反彈
+        "TVA6": {"state_filter": [6]},  # T-, V+, A-  空頭中反彈趨緩
+        "TVA7": {"state_filter": [7]},  # T-, V-, A+  空頭但加速度回升 → 底部前兆
+        "TVA8": {"state_filter": [8]},  # T-, V-, A-  全面崩跌加速 → 危險區
+
+        # --- 複合 TVA 過濾器 (進階組合) ---
+        "TVA_BULL":     {"state_filter": [1, 2]},  # 確定多頭區間 (States 1+2)
+        "TVA_REVERSAL": {"state_filter": [5, 7]},  # 反轉前夕 (底部確認)
+
+        # --- 四/五區間價格框架 ---
+        "PZ_BREAKDOWN": {"price_zone": [0]},  # 破壞價 ≤ 10th percentile
+        "PZ_CHEAP":     {"price_zone": [1]},  # 便宜區 10-30th
+        "PZ_FAIR":      {"price_zone": [2]},  # 合理區 30-70th
+        "PZ_EXPENSIVE": {"price_zone": [3]},  # 昂貴區 70-90th
+        "PZ_BUBBLE":    {"price_zone": [4]},  # 盤子價 > 90th percentile
     }
 
     common_params = {
