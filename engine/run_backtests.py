@@ -57,57 +57,76 @@ def run_many(
     chunksize: int = 10,
     show_progress: bool = False,
     progress_desc: str = "Backtests",
+    is_shutdown: callable | None = None,
 ) -> list[dict]:
     from engine.backtest import load_market_cache
 
     if workers <= 1:
         market_cache = load_market_cache()
-        if not show_progress:
-            return [
-                run_single(hypothesis, market_cache=market_cache)
-                for hypothesis in hypotheses
-            ]
-        progress = tqdm(
-            total=len(hypotheses),
-            desc=progress_desc,
-            dynamic_ncols=True,
-            unit="hyp",
-            file=sys.stdout,
-        )
         results = []
+        progress = None
+        if show_progress:
+            progress = tqdm(
+                total=len(hypotheses),
+                desc=progress_desc,
+                dynamic_ncols=True,
+                unit="hyp",
+                file=sys.stdout,
+            )
+        
         for index, hypothesis in enumerate(hypotheses, start=1):
+            if is_shutdown and is_shutdown():
+                break
             result = run_single(hypothesis, market_cache=market_cache)
             results.append(result)
-            progress.update(1)
-            progress.set_postfix_str(f"done {index}/{len(hypotheses)}")
-        progress.close()
+            if progress:
+                progress.update(1)
+                progress.set_postfix_str(f"done {index}/{len(hypotheses)}")
+        
+        if progress:
+            progress.close()
         return results
 
+    # Multiprocessing
+    results: list[dict | None] = [None] * len(hypotheses)
     with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker) as executor:
-        if not show_progress:
-            return list(executor.map(_run_single_worker, hypotheses, chunksize=chunksize))
-
         futures = {
             executor.submit(_run_single_worker, hypothesis): index
             for index, hypothesis in enumerate(hypotheses)
         }
-        results: list[dict | None] = [None] * len(hypotheses)
-        progress = tqdm(
-            total=len(hypotheses),
-            desc=progress_desc,
-            dynamic_ncols=True,
-            unit="hyp",
-            file=sys.stdout,
-        )
+        
+        progress = None
+        if show_progress:
+            progress = tqdm(
+                total=len(hypotheses),
+                desc=progress_desc,
+                dynamic_ncols=True,
+                unit="hyp",
+                file=sys.stdout,
+            )
+            
         completed = 0
-        for future in as_completed(futures):
-            index = futures[future]
-            results[index] = future.result()
-            completed += 1
-            progress.update(1)
-            progress.set_postfix_str(f"done {completed}/{len(hypotheses)}")
-        progress.close()
-        return [result for result in results if result is not None]
+        try:
+            for future in as_completed(futures):
+                if is_shutdown and is_shutdown():
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    break
+                
+                index = futures[future]
+                results[index] = future.result()
+                completed += 1
+                if progress:
+                    progress.update(1)
+                    progress.set_postfix_str(f"done {completed}/{len(hypotheses)}")
+        except Exception as e:
+            if progress:
+                progress.close()
+            raise e
+        finally:
+            if progress:
+                progress.close()
+
+    return [result for result in results if result is not None]
 
 
 def run_all(
@@ -118,6 +137,7 @@ def run_all(
     count: int | None = None,
     show_progress: bool = False,
     progress_desc: str = "Backtests",
+    is_shutdown: callable | None = None,
 ) -> list[dict]:
     hypotheses = load_hypotheses(hypothesis_file)
     selected = select_hypotheses(hypotheses, start_index=start_index, count=count)
@@ -127,6 +147,7 @@ def run_all(
         chunksize=chunksize,
         show_progress=show_progress,
         progress_desc=progress_desc,
+        is_shutdown=is_shutdown,
     )
 
 

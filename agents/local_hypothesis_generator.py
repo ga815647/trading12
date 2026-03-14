@@ -1,5 +1,6 @@
 import itertools
 import json
+import random
 import sys
 from pathlib import Path
 
@@ -9,86 +10,103 @@ if str(ROOT_DIR) not in sys.path:
 
 from config.config import HYPOTHESIS_DIR, ensure_runtime_dirs
 
-def generate_local_factory():
+def generate_local_factory(max_count: int = 1000):
     """
-    Zero-API Strategy Factory (Batch Mode)
-    Generates thousands of hypotheses for Themes A, B, E, J using a parameter grid.
+    Multi-Layered Matrix Strategy Factory
+    Combines TRIGGERS and FILTERS with parameter grids.
     """
     ensure_runtime_dirs()
     
-    # Theme A: Institutional Following (Chips)
-    # Params: threshold_a, consecutive_n, horizon_days
-    theme_a_grid = {
-        "id": ["A01", "A02", "A03", "A04", "A05"],
-        "threshold_a": [100, 200, 400, 600, 800, 1000, 1500, 2000],
-        "consecutive_n": [1, 2, 3, 5, 7, 10],
-        "horizon_days": [10, 20, 30, 60]
-    }
-    
-    # Theme B: Price Momentum
-    # Params: bar_body_pct, consecutive_n, horizon_days
-    theme_b_grid = {
-        "id": ["B01", "B02", "B03", "B04", "B05"],
-        "bar_body_pct": [0.01, 0.02, 0.03, 0.05, 0.07, 0.10],
-        "consecutive_n": [1, 3, 5, 10, 20],
-        "horizon_days": [3, 5, 10, 20]
-    }
-    
-    # Theme E: Mean Reversion (Oversold)
-    # Params: indicator_val, consecutive_n, horizon_days
-    theme_e_grid = {
-        "id": ["E01", "E02", "E03", "E04", "E05"],
-        "indicator_val": [15, 20, 25, 30, 35, 40, 45, 50],
-        "consecutive_n": [2, 3, 5, 10],
-        "horizon_days": [5, 10, 15, 20]
-    }
-    
-    # Theme J: Sentiment / Smart Money
-    # Params: threshold_a, indicator_val, horizon_days
-    theme_j_grid = {
-        "id": ["J01", "J03", "J06", "J07", "J08", "J09", "J10"],
-        "threshold_a": [100, 300, 500, 1000, 1500],
-        "indicator_val": [20, 30, 40, 50],
-        "horizon_days": [10, 20, 40, 60]
+    # Core Triggers (The 'What')
+    TRIGGERS = {
+        "A01": {"threshold_a": [100, 400, 1000], "consecutive_n": [3, 5]},
+        "A03": {"threshold_a": [200, 600, 1500], "consecutive_n": [1, 3]},
+        "B02": {"bar_body_pct": [0.03, 0.05], "consecutive_n": [5]},
+        "B03": {"bar_body_pct": [0.02, 0.07], "consecutive_n": [3, 10]},
+        "J06": {"threshold_a": [500, 1500], "indicator_val": [30, 50]},
+        "K01": {"threshold_a": [100, 500, 2000], "pattern_name": ["buy_3", "buy_5"]}
     }
 
-    all_hypotheses = []
+    # State Filters (The 'Where/When')
+    FILTERS = {
+        "NONE": {}, # No filter
+        "E01": {"indicator_val": [20, 40]},      # RSI Oversold
+        "E02": {"indicator_val": [25, 45]},      # Stoch Oversold
+        "G01": {"bar_body_pct": [0.02, 0.05]},   # Vol break
+        "FLT_UP_TREND": {},                      # 多頭排列 (Close > 20MA & 20MA Up)
+        "FLT_VOL_SHRINK": {},                    # 量縮洗盤 (Prev Vol < 0.8 * 5MA Vol)
+        "FLT_KD_OVERSOLD": {},                   # KD 落底 (K < 30 & D < 30)
+        "TVA1": {"state_filter": [1]},           # Up-Trend, Accelerating
+        "TVA5": {"state_filter": [5]}            # Down-Trend, Accelerating Up
+    }
+
+    common_params = {
+        "horizon_days": [10, 20]
+    }
+
+    all_combinations = []
     
-    # Process Grids
-    grids = [
-        ("A", theme_a_grid),
-        ("B", theme_b_grid),
-        ("E", theme_e_grid),
-        ("J", theme_j_grid)
-    ]
-    
-    for theme_name, grid in grids:
-        keys = grid.keys()
-        values = grid.values()
-        for combination in itertools.product(*values):
-            params = dict(zip(keys, combination))
-            template_id = params.pop("id")
+    for t_id, t_grid in TRIGGERS.items():
+        for f_id, f_grid in FILTERS.items():
+            # Combine grids
+            combined_grid = {**t_grid, **f_grid, **common_params}
+            keys = list(combined_grid.keys())
+            values = list(combined_grid.values())
             
-            hypo_id = f"LOCAL_{template_id}_{len(all_hypotheses):04d}"
-            all_hypotheses.append({
-                "hypothesis_id": hypo_id,
-                "id": template_id,
-                "desc": f"Local Factory Strategy: Theme {theme_name} Template {template_id}",
-                "params": params
-            })
+            for combination in itertools.product(*values):
+                params = dict(zip(keys, combination))
+                all_combinations.append({
+                    "trigger_id": t_id,
+                    "filter_id": f_id,
+                    "params": params
+                })
+
+    # Shuffle to ensure diversity when capped
+    random.shuffle(all_combinations)
     
-    print(f"Generated {len(all_hypotheses)} hypotheses.")
+    selected_combinations = all_combinations[:max_count]
+    all_hypotheses = []
+
+    for i, combo in enumerate(selected_combinations):
+        t_id = combo["trigger_id"]
+        f_id = combo["filter_id"]
+        params = combo["params"]
+        
+        # ID Format: LM_{TRIGGER}_{FILTER}_{INDEX}
+        hypo_id = f"LM_{t_id}_{f_id}_{i:04d}"
+        
+        filter_desc = f"with filter {f_id}" if f_id != "NONE" else "without filter"
+        desc = f"Matrix Strategy: Trigger {t_id} {filter_desc}"
+        
+        all_hypotheses.append({
+            "hypothesis_id": hypo_id,
+            "id": hypo_id, # Keeping duplicated for engine compatibility if needed
+            "desc": desc,
+            "params": params
+        })
+
+    print(f"Matrix combinations possible: {len(all_combinations)}")
+    print(f"Generated {len(all_hypotheses)} hypotheses (capped at {max_count}).")
     
+    # Cleanup old local batches to prevent confusion
+    for old_file in HYPOTHESIS_DIR.glob("local_batch_*.json"):
+        old_file.unlink()
+
     # Batch saving (500 per file)
     batch_size = 500
     for i in range(0, len(all_hypotheses), batch_size):
         batch_num = (i // batch_size) + 1
         batch_data = all_hypotheses[i : i + batch_size]
-        filename = HYPOTHESIS_DIR / f"local_batch_{batch_num:03d}.json"
+        filename = HYPOTHESIS_DIR / f"matrix_batch_{batch_num:03d}.json"
         
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(batch_data, f, indent=2, ensure_ascii=False)
         print(f"Saved {len(batch_data)} to {filename}")
 
 if __name__ == "__main__":
-    generate_local_factory()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--max-count", type=int, default=1000)
+    args = parser.parse_args()
+    
+    generate_local_factory(max_count=args.max_count)

@@ -109,7 +109,7 @@ def validate_backtests(
         global_anchor = max(_parse_date(d) for d in all_trade_dates)
 
     validated: list[dict[str, Any]] = []
-
+    for item, adjusted_p in zip(backtests, adjusted):
         trade_dates = item.get("trade_dates", [])
         trade_returns = item.get("trade_returns", [])
         
@@ -121,8 +121,6 @@ def validate_backtests(
         )
 
         # Small Sample Size Defense: Bayesian Smoothing towards 0.5
-        # smoothed = (wins + prior_wins) / (total + prior_total)
-        # where prior_total = _min_recent_n and prior_wins = _min_recent_n * 0.5
         if recent_count < _min_recent_n and recent_wr is not None:
             wins = recent_wr * recent_count
             recent_wr = (wins + (_min_recent_n * 0.5)) / (recent_count + _min_recent_n)

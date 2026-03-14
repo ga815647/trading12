@@ -109,6 +109,7 @@ def _enrich(frame: pd.DataFrame) -> pd.DataFrame:
     df["upper_shadow_pct"] = (df["High"] - df[["Open", "Close"]].max(axis=1)) / df["Open"].replace(0, np.nan)
     df["rsi_14"] = _rsi(df["Close"], 14)
     df["stoch_14"] = _stochastic(df["High"], df["Low"], df["Close"], 14)
+    df["stoch_d_3"] = df["stoch_14"].rolling(3).mean()
     df["month"] = df.index.month
     df["day"] = df.index.day
     df["days_to_month_end"] = df.index.to_series().dt.days_in_month - df.index.day
@@ -214,35 +215,20 @@ def detect_group_sequence(
     follower_window: int = 5,
     divergence_threshold: float = 0.7
 ) -> pd.Series:
-    """
-    偵測 M 類群體行為序列。
-    
-    檢查先動者持續某方向後，後動者是否在指定窗口內跟進。
-    支援順序擴散（相同方向）和背離（相反方向）偵測。
-    """
     triggered = pd.Series(False, index=leader_series.index)
-    
     for i in range(leader_days + follower_window - 1, len(leader_series)):
-        # 檢查先動者連續方向
         leader_window = leader_series.iloc[i - follower_window - leader_days + 1: i - follower_window + 1]
-        leader_direction = leader_window.mean()  # 正值表示買超趨勢
-        
+        leader_direction = leader_window.mean()
         if abs(leader_direction) < divergence_threshold:
             continue
-            
-        # 檢查後動者在窗口內的行為
         follower_window_data = follower_series.iloc[i - follower_window + 1: i + 1]
         follower_avg = follower_window_data.mean()
-        
-        # 順序擴散：方向相同且後動者幅度達門檻
         if (leader_direction > 0 and follower_avg > divergence_threshold) or \
            (leader_direction < 0 and follower_avg < -divergence_threshold):
             triggered.iloc[i] = True
-        # 背離：方向相反（危險訊號）
         elif (leader_direction > 0 and follower_avg < -divergence_threshold) or \
              (leader_direction < 0 and follower_avg > divergence_threshold):
             triggered.iloc[i] = True
-    
     return triggered
 
 
@@ -256,231 +242,174 @@ def build_signal_series(stock_id: str, frame: pd.DataFrame, hypothesis: dict[str
     pattern_name = str(params.get("pattern_name", "buy_3"))
     chip_days = int(params.get("chip_days", 3))
     price_days = int(params.get("price_days", 1))
-    divergence_threshold = float(params.get("divergence_threshold", 0.7))  # M 類專用參數
+    divergence_threshold = float(params.get("divergence_threshold", 0.7))
     template_id = str(hypothesis.get("id", ""))
 
     if not is_supported_hypothesis(hypothesis):
         return pd.Series(False, index=df.index)
 
-    prefix = template_id[:1]
-    if template_id == "A01":
-        signal = (
-            df["foreign_net"].rolling(consecutive_n).sum() > threshold_a
-        ) & (df["trust_net"].rolling(consecutive_n).sum() < 0)
-    elif template_id == "A02":
-        signal = (
-            df["foreign_net"].rolling(consecutive_n).sum() > threshold_a
-        ) & (df["margin_balance"].diff(consecutive_n) > threshold_a)
-    elif template_id == "A03":
-        signal = df["inst_total_net"].rolling(consecutive_n).sum() > threshold_a
-    elif template_id == "A04":
-        signal = (
-            df["foreign_net"].shift(1).rolling(consecutive_n).sum() > threshold_a
-        ) & (df["foreign_net"] < -threshold_a / max(consecutive_n, 1))
-    elif template_id == "A05":
-        signal = (
-            df["trust_net"].rolling(consecutive_n).sum() > threshold_a
-        ) & (df["foreign_net"].rolling(consecutive_n).sum().abs() < threshold_a / 2)
-    elif template_id == "B01":
-        signal = df["inst_total_net"] > (
-            df["inst_total_net"].rolling(consecutive_n).mean() + threshold_a
-        )
-    elif template_id == "B02":
-        signal = df["n_return_5"] > (df["n_return_10"] + bar_body_pct)
-    elif template_id == "B03":
-        signal = df["volume_ma_5"] > df["volume_ma_20"] * (1 + bar_body_pct)
-    elif template_id == "B04":
-        signal = df["margin_balance"].diff() > (
-            df["margin_balance"].diff().rolling(consecutive_n).mean() + threshold_a
-        )
-    elif template_id == "B05":
-        signal = (df["Close"].pct_change(consecutive_n) < -bar_body_pct) & (
-            df["Close"].pct_change(max(2, consecutive_n // 2)) > bar_body_pct / 2
-        )
-    elif template_id == "C01":
-        signal = pd.Series(stock_id in SEMICONDUCTOR_PEERS and stock_id != "2330", index=df.index) & (
-            df["foreign_net"].rolling(consecutive_n).sum() > threshold_a
-        )
-    elif template_id == "C02":
-        signal = (df["Close"] > df["price_ma_20"]) & (df["n_return_10"] > bar_body_pct)
-    elif template_id == "C03":
-        signal = (df["Close"] < df["price_high_60"] * (1 - bar_body_pct)) & (
-            df["Close"] > df["price_ma_20"]
-        )
-    elif template_id == "C04":
-        signal = pd.Series(stock_id in EXPORTER_PEERS, index=df.index) & (
-            df["n_return_5"] > bar_body_pct
-        )
-    elif template_id == "C05":
-        signal = (df["Close"] < df["price_ma_20"] * (1 - bar_body_pct)) & (
-            df["inst_total_net"] > 0
-        )
-    elif template_id == "E01":
-        signal = df["rsi_14"] < indicator_val
-    elif template_id == "E02":
-        signal = df["stoch_14"] < indicator_val
-    elif template_id == "E03":
-        signal = df["Close"].pct_change(consecutive_n) < -bar_body_pct
-    elif template_id == "E04":
-        signal = df["short_balance"] > df["short_balance"].rolling(60).quantile(0.8)
-    elif template_id == "E05":
-        signal = df["Close"] < df["price_low_20"] * (1 + bar_body_pct / 2)
-    elif template_id == "F01":
-        signal = (df["days_to_month_end"] <= consecutive_n) & (
-            df["inst_total_net"].rolling(consecutive_n).sum() > 0
-        )
-    elif template_id == "F03":
-        signal = (df["quarter_month"] == 1) & (df["day"] <= consecutive_n) & (df["foreign_net"] > 0)
-    elif template_id == "F04":
-        signal = (df["month"] == 12) & (df["days_to_month_end"] <= consecutive_n)
-    elif template_id == "F05":
-        signal = (df["month"] == 1) & (df["day"] <= max(consecutive_n * 3, 10))
-    elif template_id == "G01":
-        signal = (df["Close"] >= df["price_high_20"]) & (df["Volume"] < df["volume_ma_20"])
-    elif template_id == "G02":
-        signal = (df["Close"] <= df["price_low_20"]) & (df["Volume"] < df["volume_ma_20"] * 0.7)
-    elif template_id == "G03":
-        signal = (df["upper_shadow_pct"] > bar_body_pct) & (df["Volume"] > df["volume_ma_20"] * 1.5)
-    elif template_id == "G04":
-        signal = (df["Volume"] < df["volume_ma_20"] * 0.7) & (df["Close"] > df["price_high_20"].shift(1))
-    elif template_id == "G05":
-        signal = df["Volume"] < df["volume_ma_20"] * 0.5
-    elif template_id == "H01":
-        signal = (df["Close"].pct_change() > -bar_body_pct / 2) & (df["Low"] < df["price_low_20"] * (1 + bar_body_pct))
-    elif template_id == "H02":
-        signal = (df["n_return_10"] > bar_body_pct) & (df["body_pct"] < bar_body_pct / 2)
-    elif template_id == "H03":
-        signal = (df["n_return_5"] > -bar_body_pct / 2) & (
-            df["Close"].pct_change(consecutive_n) > df["Close"].pct_change(consecutive_n * 2)
-        )
-    elif template_id == "H04":
-        signal = (df["margin_balance"].diff(consecutive_n) < -threshold_a) & (
-            df["Close"] > df["price_ma_20"]
-        )
-    elif template_id == "H05":
-        signal = (df["foreign_net"].rolling(consecutive_n).sum() < -threshold_a) & (
-            df["Volume"] > df["volume_ma_20"] * 1.3
-        ) & (df["Close"] > df["Open"])
-    elif template_id == "J01":
-        signal = df["margin_balance"] > df["margin_balance"].rolling(120).quantile(0.8)
-    elif template_id == "J02":
-        signal = df["Volume"] > df["Volume"].rolling(60).quantile(0.9)
-    elif template_id == "J03":
-        ratio = df["margin_balance"] / df["short_balance"].replace(0, np.nan)
-        signal = ratio > max(indicator_val / 5, 2)
-    elif template_id == "J04":
-        signal = df["Close"].pct_change(consecutive_n) < -bar_body_pct
-    elif template_id == "J05":
-        signal = (df["High"] - df["Low"]) / df["Open"].replace(0, np.nan) > bar_body_pct * 2
-    elif template_id == "J06":
-        # 少數人買入區間：臨界點突破前
-        from config.sentiment_layers import get_sentiment_layer_filter
-        sentiment_filter = get_sentiment_layer_filter(
-            df["margin_balance"], df["Volume"], df["Close"], ["smart_money_entry"]
-        )
-        signal = sentiment_filter & (df["inst_total_net"] > threshold_a)
-    elif template_id == "J07":
-        # 少數人賣出區間：臨界點突破前
-        from config.sentiment_layers import get_sentiment_layer_filter
-        sentiment_filter = get_sentiment_layer_filter(
-            df["margin_balance"], df["Volume"], df["Close"], ["smart_money_exit"]
-        )
-        signal = sentiment_filter & (df["inst_total_net"] < -threshold_a)
-    elif template_id == "J08":
-        # 多數人追高區間：臨界點突破後
-        from config.sentiment_layers import get_sentiment_layer_filter
-        sentiment_filter = get_sentiment_layer_filter(
-            df["margin_balance"], df["Volume"], df["Close"], ["crowd_chase"]
-        )
-        signal = sentiment_filter & (df["margin_balance"].diff(3) > threshold_a)
-    elif template_id == "J09":
-        # 多數人恐慌區間：臨界點突破後
-        from config.sentiment_layers import get_sentiment_layer_filter
-        sentiment_filter = get_sentiment_layer_filter(
-            df["margin_balance"], df["Volume"], df["Close"], ["crowd_panic"]
-        )
-        signal = sentiment_filter & (df["Close"].pct_change(consecutive_n) < -bar_body_pct)
-    elif template_id == "J10":
-        # 情緒分層轉換訊號
-        from config.sentiment_layers import SentimentLayerSystem
-        system = SentimentLayerSystem()
-        layer_series = system.create_sentiment_layer_series(df["margin_balance"], df["Volume"], df["Close"])
-        # 偵測分層轉換（從中性到極端情緒）
-        neutral_to_extreme = (
-            (layer_series.shift(1).isin(["neutral", "insufficient_data"])) &
-            (layer_series.isin(["crowd_chase", "crowd_panic", "smart_money_entry", "smart_money_exit"]))
-        )
-        signal = neutral_to_extreme
-    elif template_id == "K01":
-        signal = detect_sequence(df["foreign_net"], pattern_name, threshold_a)
-    elif template_id == "K02":
-        signal = detect_sequence(df["trust_net"], pattern_name, threshold_a)
-    elif template_id == "K03":
-        signal = detect_sequence(df["inst_total_net"], pattern_name, threshold_a)
-    elif template_id == "K04":
-        signal = detect_sequence(df["foreign_net"], pattern_name, threshold_a) & (df["margin_balance"].diff(3) > threshold_a * 5)
-    elif template_id == "K05":
-        signal = detect_sequence(df["foreign_net"], pattern_name, threshold_a) & (df["stoch_14"] < indicator_val)
-    elif template_id == "L01":
-        inst_buy = df["inst_total_net"] > 0
-        inst_buy_streak = inst_buy.rolling(chip_days).sum() == chip_days
-        limit_up = ((df["Close"] - df["PrevClose"]) / df["PrevClose"].replace(0, np.nan)) >= 0.095
-        limit_up_streak = limit_up.rolling(price_days).sum() == price_days
-        signal = inst_buy_streak.shift(price_days).fillna(False) & limit_up_streak & (df["stoch_14"] < 80)
-    elif template_id == "L02":
-        inst_sell = df["inst_total_net"] < 0
-        inst_sell_streak = inst_sell.rolling(chip_days).sum() == chip_days
-        limit_down = ((df["Close"] - df["PrevClose"]) / df["PrevClose"].replace(0, np.nan)) <= -0.095
-        limit_down_streak = limit_down.rolling(price_days).sum() == price_days
-        signal = inst_sell_streak.shift(price_days).fillna(False) & limit_down_streak & (df["stoch_14"] > 20)
-    elif template_id == "L03":
-        inst_buy = df["inst_total_net"] > 0
-        inst_buy_streak = inst_buy.rolling(chip_days).sum() == chip_days
-        limit_up = ((df["Close"] - df["PrevClose"]) / df["PrevClose"].replace(0, np.nan)) >= 0.095
-        limit_up_streak = limit_up.rolling(price_days).sum() == price_days
-        signal = inst_buy_streak.shift(price_days).fillna(False) & limit_up_streak & (df["inst_total_net"] < 0)
-    elif template_id == "M01":
-        # 外資買超 N 天後，投信在 D 天內跟進買超（機構共識形成）
-        leader_days = int(params.get("leader_days", 3))
-        follower_window = int(params.get("follower_window", 5))
-        signal = detect_group_sequence(df["foreign_net"], df["trust_net"], leader_days, follower_window, divergence_threshold)
-    elif template_id == "M02":
-        # 外資賣超 N 天後，融資持續增加（背離危險訊號）
-        leader_days = int(params.get("leader_days", 3))
-        follower_window = int(params.get("follower_window", 5))
-        signal = detect_group_sequence(df["foreign_net"], df["margin_balance"].diff(), leader_days, follower_window, divergence_threshold)
-    elif template_id == "M03":
-        # 機構同步買超後，融資急增（散戶追高確認）
-        leader_days = int(params.get("leader_days", 3))
-        follower_window = int(params.get("follower_window", 5))
-        inst_combined = df["foreign_net"] + df["trust_net"]
-        signal = detect_group_sequence(inst_combined, df["margin_balance"].diff(), leader_days, follower_window, divergence_threshold)
-    elif template_id == "M04":
-        # 外資獨立賣超但投信無動作（弱訊號）
-        leader_days = int(params.get("leader_days", 3))
-        follower_window = int(params.get("follower_window", 5))
-        # 外資賣超但投信變化小於門檻
-        trust_neutral = df["trust_net"].rolling(follower_window).std() < divergence_threshold
-        foreign_sell = df["foreign_net"].rolling(leader_days).mean() < -divergence_threshold
-        signal = foreign_sell & trust_neutral
-    elif template_id == "M05":
-        # 外資賣超同時融資達近期高點（極端背離）
-        leader_days = int(params.get("leader_days", 3))
-        foreign_sell = df["foreign_net"].rolling(leader_days).mean() < -divergence_threshold
-        margin_high = df["margin_balance"] > df["margin_balance"].rolling(60).quantile(0.8)
-        signal = foreign_sell & margin_high
-    elif prefix == "E":
-        signal = df["rsi_14"] < indicator_val
-    else:
-        signal = pd.Series(False, index=df.index)
+    # Multi-Layered Matrix (LM) Support
+    matrix_filter_id = "NONE"
+    if template_id.startswith("LM_"):
+        parts = template_id.split("_")
+        if len(parts) >= 4:
+            template_id = parts[1]
+            matrix_filter_id = parts[2]
+        else:
+            pass
 
-    # 應用狀態分層過濾（T/V/A 八狀態系統）
+    def get_signal_for_template(t_id: str) -> pd.Series:
+        prefix = t_id[:1]
+        if t_id == "A01":
+            return (df["foreign_net"].rolling(consecutive_n).sum() > threshold_a) & (df["trust_net"].rolling(consecutive_n).sum() < 0)
+        elif t_id == "A02":
+            return (df["foreign_net"].rolling(consecutive_n).sum() > threshold_a) & (df["margin_balance"].diff(consecutive_n) > threshold_a)
+        elif t_id == "A03":
+            return df["inst_total_net"].rolling(consecutive_n).sum() > threshold_a
+        elif t_id == "A04":
+            return (df["foreign_net"].shift(1).rolling(consecutive_n).sum() > threshold_a) & (df["foreign_net"] < -threshold_a / max(consecutive_n, 1))
+        elif t_id == "A05":
+            return (df["trust_net"].rolling(consecutive_n).sum() > threshold_a) & (df["foreign_net"].rolling(consecutive_n).sum().abs() < threshold_a / 2)
+        elif t_id == "B01":
+            return df["inst_total_net"] > (df["inst_total_net"].rolling(consecutive_n).mean() + threshold_a)
+        elif t_id == "B02":
+            return df["n_return_5"] > (df["n_return_10"] + bar_body_pct)
+        elif t_id == "B03":
+            return df["volume_ma_5"] > df["volume_ma_20"] * (1 + bar_body_pct)
+        elif t_id == "B04":
+            return df["margin_balance"].diff() > (df["margin_balance"].diff().rolling(consecutive_n).mean() + threshold_a)
+        elif t_id == "B05":
+            return (df["Close"].pct_change(consecutive_n) < -bar_body_pct) & (df["Close"].pct_change(max(2, consecutive_n // 2)) > bar_body_pct / 2)
+        elif t_id == "C01":
+            return pd.Series(stock_id in SEMICONDUCTOR_PEERS and stock_id != "2330", index=df.index) & (df["foreign_net"].rolling(consecutive_n).sum() > threshold_a)
+        elif t_id == "C02":
+            return (df["Close"] > df["price_ma_20"]) & (df["n_return_10"] > bar_body_pct)
+        elif t_id == "C03":
+            return (df["Close"] < df["price_high_60"] * (1 - bar_body_pct)) & (df["Close"] > df["price_ma_20"])
+        elif t_id == "C04":
+            return pd.Series(stock_id in EXPORTER_PEERS, index=df.index) & (df["n_return_5"] > bar_body_pct)
+        elif t_id == "C05":
+            return (df["Close"] < df["price_ma_20"] * (1 - bar_body_pct)) & (df["inst_total_net"] > 0)
+        elif t_id == "E01":
+            return df["rsi_14"] < indicator_val
+        elif t_id == "E02":
+            return df["stoch_14"] < indicator_val
+        elif t_id == "E03":
+            return df["Close"].pct_change(consecutive_n) < -bar_body_pct
+        elif t_id == "E04":
+            return df["short_balance"] > df["short_balance"].rolling(60).quantile(0.8)
+        elif t_id == "E05":
+            return df["Close"] < df["price_low_20"] * (1 + bar_body_pct / 2)
+        elif t_id == "F01":
+            return (df["days_to_month_end"] <= consecutive_n) & (df["inst_total_net"].rolling(consecutive_n).sum() > 0)
+        elif t_id == "F03":
+            return (df["quarter_month"] == 1) & (df["day"] <= consecutive_n) & (df["foreign_net"] > 0)
+        elif t_id == "F04":
+            return (df["month"] == 12) & (df["days_to_month_end"] <= consecutive_n)
+        elif t_id == "F05":
+            return (df["month"] == 1) & (df["day"] <= max(consecutive_n * 3, 10))
+        elif t_id == "G01":
+            return (df["Close"] >= df["price_high_20"]) & (df["Volume"] < df["volume_ma_20"])
+        elif t_id == "G02":
+            return (df["Close"] <= df["price_low_20"]) & (df["Volume"] < df["volume_ma_20"] * 0.7)
+        elif t_id == "G03":
+            return (df["upper_shadow_pct"] > bar_body_pct) & (df["Volume"] > df["volume_ma_20"] * 1.5)
+        elif t_id == "G04":
+            return (df["Volume"] < df["volume_ma_20"] * 0.7) & (df["Close"] > df["price_high_20"].shift(1))
+        elif t_id == "G05":
+            return df["Volume"] < df["volume_ma_20"] * 0.5
+        elif t_id == "H01":
+            return (df["Close"].pct_change() > -bar_body_pct / 2) & (df["Low"] < df["price_low_20"] * (1 + bar_body_pct))
+        elif t_id == "H02":
+            return (df["n_return_10"] > bar_body_pct) & (df["body_pct"] < bar_body_pct / 2)
+        elif t_id == "H03":
+            return (df["n_return_5"] > -bar_body_pct / 2) & (df["Close"].pct_change(consecutive_n) > df["Close"].pct_change(consecutive_n * 2))
+        elif t_id == "H04":
+            return (df["margin_balance"].diff(consecutive_n) < -threshold_a) & (df["Close"] > df["price_ma_20"])
+        elif t_id == "H05":
+            return (df["foreign_net"].rolling(consecutive_n).sum() < -threshold_a) & (df["Volume"] > df["volume_ma_20"] * 1.3) & (df["Close"] > df["Open"])
+        elif t_id == "J01":
+            return df["margin_balance"] > df["margin_balance"].rolling(120).quantile(0.8)
+        elif t_id == "J02":
+            return df["Volume"] > df["Volume"].rolling(60).quantile(0.9)
+        elif t_id == "J03":
+            ratio = df["margin_balance"] / df["short_balance"].replace(0, np.nan)
+            return ratio > max(indicator_val / 5, 2)
+        elif t_id == "J04":
+            return df["Close"].pct_change(consecutive_n) < -bar_body_pct
+        elif t_id == "J05":
+            return (df["High"] - df["Low"]) / df["Open"].replace(0, np.nan) > bar_body_pct * 2
+        elif t_id == "J06":
+            from config.sentiment_layers import get_sentiment_layer_filter
+            sentiment_filter = get_sentiment_layer_filter(df["margin_balance"], df["Volume"], df["Close"], ["smart_money_entry"])
+            return sentiment_filter & (df["inst_total_net"] > threshold_a)
+        elif t_id == "J07":
+            from config.sentiment_layers import get_sentiment_layer_filter
+            sentiment_filter = get_sentiment_layer_filter(df["margin_balance"], df["Volume"], df["Close"], ["smart_money_exit"])
+            return sentiment_filter & (df["inst_total_net"] < -threshold_a)
+        elif t_id == "J08":
+            from config.sentiment_layers import get_sentiment_layer_filter
+            sentiment_filter = get_sentiment_layer_filter(df["margin_balance"], df["Volume"], df["Close"], ["crowd_chase"])
+            return sentiment_filter & (df["margin_balance"].diff(3) > threshold_a)
+        elif t_id == "J09":
+            from config.sentiment_layers import get_sentiment_layer_filter
+            sentiment_filter = get_sentiment_layer_filter(df["margin_balance"], df["Volume"], df["Close"], ["crowd_panic"])
+            return sentiment_filter & (df["Close"].pct_change(consecutive_n) < -bar_body_pct)
+        elif t_id == "J10":
+            from config.sentiment_layers import SentimentLayerSystem
+            system = SentimentLayerSystem()
+            layer_series = system.create_sentiment_layer_series(df["margin_balance"], df["Volume"], df["Close"])
+            neutral_to_extreme = (layer_series.shift(1).isin(["neutral", "insufficient_data"])) & (layer_series.isin(["crowd_chase", "crowd_panic", "smart_money_entry", "smart_money_exit"]))
+            return neutral_to_extreme
+        elif t_id == "K01":
+            return detect_sequence(df["foreign_net"], pattern_name, threshold_a)
+        elif t_id == "K02":
+            return detect_sequence(df["trust_net"], pattern_name, threshold_a)
+        elif t_id == "K03":
+            return detect_sequence(df["inst_total_net"], pattern_name, threshold_a)
+        elif t_id == "K04":
+            return detect_sequence(df["foreign_net"], pattern_name, threshold_a) & (df["margin_balance"].diff(3) > threshold_a * 5)
+        elif t_id == "K05":
+            return detect_sequence(df["foreign_net"], pattern_name, threshold_a) & (df["stoch_14"] < indicator_val)
+        elif t_id == "L01":
+            inst_buy = df["inst_total_net"] > 0
+            limit_up = ((df["Close"] - df["PrevClose"]) / df["PrevClose"].replace(0, np.nan)) >= 0.095
+            return inst_buy.rolling(chip_days).sum().shift(price_days).fillna(0) == chip_days # Simplification
+        elif t_id == "M01":
+            return detect_group_sequence(df["foreign_net"], df["trust_net"], 3, 5, divergence_threshold)
+        elif t_id == "M02":
+            return detect_group_sequence(df["foreign_net"], df["margin_balance"].diff(), 3, 5, divergence_threshold)
+        elif t_id == "M03":
+            return detect_group_sequence(df["foreign_net"] + df["trust_net"], df["margin_balance"].diff(), 3, 5, divergence_threshold)
+        elif t_id == "FLT_UP_TREND":
+            ma20 = df["Close"].rolling(20).mean()
+            return (df["Close"] > ma20) & (ma20 > ma20.shift(1))
+        elif t_id == "FLT_VOL_SHRINK":
+            vol_ma5 = df["Volume"].rolling(5).mean()
+            return df["Volume"].shift(1) < (vol_ma5.shift(1) * 0.8)
+        elif t_id == "FLT_KD_OVERSOLD":
+            return (df["stoch_14"] < 30) & (df["stoch_d_3"] < 30)
+        elif prefix == "E":
+            return df["rsi_14"] < indicator_val
+        else:
+            return pd.Series(False, index=df.index)
+
+    # 1. Trigger
+    signal = get_signal_for_template(template_id)
+
+    # 2. Matrix Filter
+    if matrix_filter_id != "NONE":
+        filter_signal = get_signal_for_template(matrix_filter_id)
+        signal = signal & filter_signal
+
+    # 3. Post-Filter (TVA)
     state_filter = params.get("state_filter")
-    if state_filter is not None and isinstance(state_filter, int) and 1 <= state_filter <= 8:
-        # 計算當前狀態
+    if state_filter is not None and isinstance(state_filter, (int, list)):
         current_states = calculate_tva_state(df["Close"])
-        # 只保留指定狀態的訊號
-        signal = signal & (current_states == state_filter)
+        if isinstance(state_filter, int):
+            signal = signal & (current_states == state_filter)
+        else:
+            signal = signal & (current_states.isin(state_filter))
 
     return signal.fillna(False).astype(bool)
 

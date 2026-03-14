@@ -1,6 +1,8 @@
 import argparse
 import json
 import logging
+import os
+import signal
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -15,6 +17,20 @@ from engine.lifecycle import filter_and_thaw, get_current_market_bars, update_li
 from engine.notify import send_signal
 
 import pyarrow.parquet as pq
+
+# Global shutdown flag
+SHUTDOWN_REQUESTED = False
+
+def shutdown_handler(signum, frame):
+    global SHUTDOWN_REQUESTED
+    if not SHUTDOWN_REQUESTED:
+        SHUTDOWN_REQUESTED = True
+        logger.info("\n[System] 🛑 收到中斷指令，正在安全停止所有平行任務並清理程序...")
+    else:
+        logger.warning("[System] ⚠️ 已在執行中斷流程，請勿重複操作。")
+
+# Register signal handler
+signal.signal(signal.SIGINT, shutdown_handler)
 
 # Configure logging
 ensure_runtime_dirs()
@@ -73,15 +89,43 @@ def get_theoretical_latest_trading_day() -> str:
     return latest.strftime("%Y-%m-%d")
 
 def run_step(name: str, cmd: list[str], cwd: Path = ROOT_DIR):
+    if SHUTDOWN_REQUESTED:
+        logger.info(f"Skipping step {name} due to shutdown request.")
+        return
+
     logger.info(f">>> Starting Step: {name}")
     logger.info(f"Command: {' '.join(cmd)}")
+    
+    # Process group management for Linux/WSL to ensure clean cleanup
+    popen_kwargs = {"cwd": cwd}
+    if sys.platform != "win32":
+        popen_kwargs["preexec_fn"] = os.setsid
+
     try:
-        # Don't use capture_output=True, allow it to stream to the main terminal
-        result = subprocess.run(cmd, cwd=cwd, check=True)
+        process = subprocess.Popen(cmd, **popen_kwargs)
+        
+        while process.poll() is None:
+            if SHUTDOWN_REQUESTED:
+                logger.info(f"[System] 🛑 Terminating {name} process group...")
+                if sys.platform != "win32":
+                    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+                else:
+                    process.terminate()
+                process.wait(timeout=2)
+                return
+            # Small sleep to prevent CPU hogging while waiting
+            import time
+            time.sleep(0.5)
+
+        if process.returncode != 0:
+            logger.error(f"Step {name} failed with exit code {process.returncode}")
+            raise subprocess.CalledProcessError(process.returncode, cmd)
+            
         logger.info(f"Step {name} completed successfully.")
         return ""
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Step {name} failed with exit code {e.returncode}")
+    except Exception as e:
+        if not SHUTDOWN_REQUESTED:
+            logger.error(f"Error in step {name}: {e}")
         raise
 
 def main():
@@ -89,8 +133,13 @@ def main():
     parser.add_argument("--mode", choices=["local", "llm"], default="local")
     parser.add_argument("--skip-fetch", action="store_true", help="Skip data fetching")
     parser.add_argument("--force", action="store_true", help="Force run all steps regardless of date guard")
-    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--gen-hypotheses", type=str, choices=["True", "False"], default="True", help="Whether to run strategy generation")
+    parser.add_argument("--gen-count", type=int, default=1000, help="Max strategies to generate")
+    parser.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 1) - 2))
     args = parser.parse_args()
+
+    # Convert gen-hypotheses to bool
+    args.gen_hypotheses = args.gen_hypotheses == "True"
 
     start_time = datetime.now()
     logger.info(f"===== Orchestrator Pulse Start: {start_time.isoformat()} =====")
@@ -128,11 +177,17 @@ def main():
 
         # 2. Generation & Lifecycle Filtering
         logger.info(">>> Segment: Generation & Lifecycle Filter")
-        if args.mode == "local":
-            run_step("Local Generation", [sys.executable, "agents/local_hypothesis_generator.py"])
+        if args.gen_hypotheses:
+            if args.mode == "local":
+                from agents.local_hypothesis_generator import generate_local_factory
+                logger.info(f"Running Local Matrix Generation (max_count={args.gen_count})")
+                generate_local_factory(max_count=args.gen_count)
+            else:
+                # Placeholder for Agent 1 LLM generation if automated later
+                logger.info("LLM generation segment skipped (manual/adhoc trigger expected)")
         else:
-            # Placeholder for Agent 1 LLM generation if automated later
-            logger.info("LLM generation segment skipped (manual/adhoc trigger expected)")
+            logger.info("🛡️ [Orchestrator] Strategy generation skipped by command.")
+            print("\n🛡️ [Orchestrator] 依指令跳過策略產生階段，測試既有或凍結名單。")
 
         # Load all hypotheses from HYPOTHESIS_DIR
         hypo_files = list(HYPOTHESIS_DIR.glob("*.json"))
@@ -158,27 +213,44 @@ def main():
                 json.dump(to_test, f, indent=2)
 
             # 3. Backtest
-            run_step("Backtest", [
-                sys.executable, "engine/run_backtests.py",
-                "--hypothesis-file", str(to_test_path),
-                "--output", str(BACKTEST_DIR / "orchestrator_results.enc"),
-                "--workers", str(args.workers),
-                "--progress"
-            ])
+            from engine.run_backtests import run_all
+            from config.encrypt import save_signal
+
+            def is_shutdown():
+                return SHUTDOWN_REQUESTED
+
+            logger.info(">>> Starting Step: Backtest (Parallel)")
+            backtest_results = run_all(
+                to_test_path,
+                workers=args.workers,
+                show_progress=True,
+                is_shutdown=is_shutdown
+            )
+            
+            if SHUTDOWN_REQUESTED:
+                logger.warning("Backtesting interrupted. Saving partial results if any.")
+            
+            output_path = BACKTEST_DIR / "orchestrator_results.enc"
+            save_signal(backtest_results, output_path)
+            logger.info(f"Step Backtest completed. {len(backtest_results)} results saved.")
+
+            if SHUTDOWN_REQUESTED:
+                return
 
             # 4. Validate
             run_step("Validate", [
                 sys.executable, "engine/validator.py",
-                "--input", str(BACKTEST_DIR / "orchestrator_results.enc"),
+                "--input", str(output_path),
                 "--output", str(SIGNAL_DIR / "library.enc")
             ])
 
+            if SHUTDOWN_REQUESTED:
+                return
+
             # 5. Update Lifecycle
             from config.encrypt import load_encrypted_json
-            backtest_results = load_encrypted_json(BACKTEST_DIR / "orchestrator_results.enc")
-            # We need the 'passes_validation' flag from validator output if we want accuracy, 
-            # but validator.py saves its OWN output. 
-            # Let's merge the validation status back.
+            # Use backtest_results which we already have in memory
+            # Validated ID merging logic
             validated = load_encrypted_json(SIGNAL_DIR / "library.enc")
             valid_ids = {v.get("hypothesis_id") for v in validated if v.get("passes_validation")}
             
@@ -187,20 +259,25 @@ def main():
             
             update_lifecycle(backtest_results, current_bars)
             
-            # Count how many of the JUST TESTED strategies are now active
             new_active_count = len([vid for vid in valid_ids if vid in {t.get("hypothesis_id") for t in to_test}])
             logger.info(f"Lifecycle registry updated. New active strategies found: {new_active_count}")
 
+            if SHUTDOWN_REQUESTED:
+                return
+
         # 6. Smart Scan Guard
+        if SHUTDOWN_REQUESTED: return
         if not has_new_data and new_active_count == 0:
             logger.info("🛡️ [Smart Scan Guard] No new data and no new strategies found. Skipping scan.")
             print("\n🛡️ 今日無新資料且未發現新策略，跳過掃描與推播以防洗版。")
             return
 
         # 7. Daily Scan
+        if SHUTDOWN_REQUESTED: return
         scan_output = run_step("Daily Scan", [sys.executable, "engine/run_daily_scan.py"])
         
         # 8. Reporting
+        if SHUTDOWN_REQUESTED: return
         end_time = datetime.now()
         duration = end_time - start_time
         summary_msg = (
