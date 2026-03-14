@@ -4,7 +4,7 @@ import argparse
 import json
 import os
 import sys
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed, BrokenProcessPool
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -101,10 +101,11 @@ def run_many(
             file=sys.stdout,
         )
         
-    futures = {
-        executor.submit(_run_single_worker, hypothesis): index
-        for index, hypothesis in enumerate(hypotheses)
-    }
+    futures = {}
+    for index, hypothesis in enumerate(hypotheses):
+        if is_shutdown and is_shutdown():
+            break
+        futures[executor.submit(_run_single_worker, hypothesis)] = index
     
     completed = 0
     try:
@@ -113,7 +114,6 @@ def run_many(
         for future in as_completed(futures):
             # Check shutdown BEFORE processing each result
             if is_shutdown and is_shutdown():
-                executor.shutdown(wait=False, cancel_futures=True)
                 break
             
             try:
@@ -123,12 +123,16 @@ def run_many(
                 if progress:
                     progress.update(1)
                     progress.set_postfix_str(f"done {completed}/{len(hypotheses)}")
+            except (KeyboardInterrupt, BrokenProcessPool):
+                break
             except Exception as e:
                 # If a single task fails, we log and continue unless it's a shutdown
                 if is_shutdown and is_shutdown():
                     break
                 print(f"\nTask failed: {e}")
                 
+    except (KeyboardInterrupt, BrokenProcessPool):
+        pass
     except Exception as e:
         executor.shutdown(wait=False, cancel_futures=True)
         raise e
@@ -138,8 +142,8 @@ def run_many(
         
         is_hard_shutdown = is_shutdown and is_shutdown()
         if is_hard_shutdown:
-            # Atomic exit: Don't call executor.shutdown() which can hang in some environments.
-            # Orchestrator will handle the nuclear SIGKILL.
+            # Force shutdown the executor to prevent hanging
+            executor.shutdown(wait=False, cancel_futures=True)
             return [result for result in results if result is not None]
         
         executor.shutdown(wait=True)

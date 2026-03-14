@@ -26,7 +26,7 @@ def shutdown_handler(signum, frame):
     global SHUTDOWN_REQUESTED
     # Only the main process should handle this to avoid log spam and redundant cleanup
     if os.getpid() != MAIN_PID:
-        return
+        os._exit(1)
         
     if not SHUTDOWN_REQUESTED:
         SHUTDOWN_REQUESTED = True
