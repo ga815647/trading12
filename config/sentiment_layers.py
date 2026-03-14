@@ -43,9 +43,7 @@ class SentimentLayerSystem:
         Returns:
             融資情緒分位數 (0-1)
         """
-        return margin_balance.rolling(window).apply(
-            lambda x: pd.Series(x).rank(pct=True).iloc[-1]
-        )
+        return margin_balance.rolling(window).rank(pct=True)
 
     def calculate_volume_sentiment_ratio(
         self,
@@ -155,62 +153,6 @@ class SentimentLayerSystem:
                             minority_zone_positive | minority_zone_negative)
         }
 
-    def get_sentiment_layer(
-        self,
-        margin_balance: pd.Series,
-        volume: pd.Series,
-        price_series: pd.Series,
-        current_idx: Optional[int] = None
-    ) -> str:
-        """
-        獲取當前情緒分層
-
-        Args:
-            margin_balance: 融資餘額序列
-            volume: 成交量序列
-            price_series: 價格序列
-            current_idx: 當前索引（用於歷史資料計算）
-
-        Returns:
-            情緒分層名稱
-        """
-        if current_idx is not None:
-            # 使用歷史資料
-            margin_pct = self.calculate_margin_sentiment_percentile(
-                margin_balance.iloc[:current_idx+1]
-            ).iloc[-1]
-            vol_ratio = self.calculate_volume_sentiment_ratio(
-                volume.iloc[:current_idx+1]
-            ).iloc[-1]
-            consec_up, consec_down = self.calculate_consecutive_move_streak(
-                price_series.iloc[:current_idx+1]
-            )
-            consec_up_val = consec_up.iloc[-1]
-            consec_down_val = consec_down.iloc[-1]
-        else:
-            # 使用完整序列
-            margin_pct = self.calculate_margin_sentiment_percentile(margin_balance).iloc[-1]
-            vol_ratio = self.calculate_volume_sentiment_ratio(volume).iloc[-1]
-            consec_up, consec_down = self.calculate_consecutive_move_streak(price_series)
-            consec_up_val = consec_up.iloc[-1]
-            consec_down_val = consec_down.iloc[-1]
-
-        sentiment_states = self.detect_sentiment_thresholds(
-            pd.Series([margin_pct]), pd.Series([vol_ratio]),
-            pd.Series([consec_up_val]), pd.Series([consec_down_val])
-        )
-
-        if sentiment_states['positive_breakout'].iloc[-1]:
-            return 'crowd_chase'  # 多數人追高
-        elif sentiment_states['negative_breakout'].iloc[-1]:
-            return 'crowd_panic'  # 多數人恐慌
-        elif sentiment_states['minority_positive'].iloc[-1]:
-            return 'smart_money_entry'  # 少數人買入
-        elif sentiment_states['minority_negative'].iloc[-1]:
-            return 'smart_money_exit'  # 少數人賣出
-        else:
-            return 'neutral'  # 中性區間
-
     def create_sentiment_layer_series(
         self,
         margin_balance: pd.Series,
@@ -218,26 +160,26 @@ class SentimentLayerSystem:
         price_series: pd.Series
     ) -> pd.Series:
         """
-        建立完整的情緒分層序列
-
-        Args:
-            margin_balance: 融資餘額序列
-            volume: 成交量序列
-            price_series: 價格序列
-
-        Returns:
-            情緒分層名稱序列
+        建立完整的情緒分層序列 (Vectorized Version)
         """
-        layer_series = pd.Series(index=margin_balance.index, dtype=str)
+        # Vectorized calculations for the entire series at once
+        margin_pct = self.calculate_margin_sentiment_percentile(margin_balance)
+        vol_ratio = self.calculate_volume_sentiment_ratio(volume)
+        consec_up, consec_down = self.calculate_consecutive_move_streak(price_series)
 
-        for i in range(len(margin_balance)):
-            if i < 30:  # 至少需要30天資料
-                layer_series.iloc[i] = 'insufficient_data'
-                continue
+        sentiment_states = self.detect_sentiment_thresholds(
+            margin_pct, vol_ratio, consec_up, consec_down
+        )
 
-            layer_series.iloc[i] = self.get_sentiment_layer(
-                margin_balance, volume, price_series, i
-            )
+        layer_series = pd.Series('neutral', index=margin_balance.index, dtype=str)
+        
+        layer_series[sentiment_states['positive_breakout']] = 'crowd_chase'
+        layer_series[sentiment_states['negative_breakout']] = 'crowd_panic'
+        layer_series[sentiment_states['minority_positive']] = 'smart_money_entry'
+        layer_series[sentiment_states['minority_negative']] = 'smart_money_exit'
+        
+        # Ensure first 30 days are 'insufficient_data'
+        layer_series.iloc[:30] = 'insufficient_data'
 
         return layer_series
 

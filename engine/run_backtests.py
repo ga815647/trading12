@@ -34,9 +34,9 @@ def _init_worker() -> None:
 
 
 def _run_single_worker(hypothesis: dict) -> dict:
+    from datetime import datetime
+    print(f"[{datetime.now()}] Worker executing: {hypothesis.get('hypothesis_id')}", flush=True)
     return run_single(hypothesis, market_cache=_WORKER_MARKET_CACHE)
-
-
 def load_hypotheses(hypothesis_file: Path) -> list[dict]:
     return json.loads(hypothesis_file.read_text(encoding="utf-8"))
 
@@ -78,6 +78,7 @@ def run_many(
         for index, hypothesis in enumerate(hypotheses, start=1):
             if is_shutdown and is_shutdown():
                 break
+            print(f"[{index}/{len(hypotheses)}] Single Worker executing: {hypothesis.get('hypothesis_id')}", flush=True)
             result = run_single(hypothesis, market_cache=market_cache)
             results.append(result)
             if progress:
