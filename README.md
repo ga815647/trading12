@@ -201,7 +201,7 @@ python agents/hypothesis_generator.py --batch-size 200 --seed 42
 
 **3. 四/五區間價格框架**：以過去一年動態高低點為基準，`PZ_BREAKDOWN (0)` → `PZ_CHEAP (1)` → `PZ_FAIR (2)` → `PZ_EXPENSIVE (3)` → `PZ_BUBBLE (4)`。
 
-**4. 變力相位差**：(Phase 2 預定) 量測兩條行為序列間的時間與振幅差。
+**4. 變動相位差**：(Phase 2 預定) 量測兩條行為序列間的時間與振幅差。
 
 ### Ensemble 訊號疊加架構
 
