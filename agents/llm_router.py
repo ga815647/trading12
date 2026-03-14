@@ -46,7 +46,7 @@ def cloud_llm(prompt: str, model: str | None = None) -> str:
             model = "claude-3-5-sonnet-20240620"
         elif SETTINGS.gemini_api_key:
             provider = "gemini"
-            model = "gemini-1.5-flash"
+            model = "gemini-2.0-flash"
         elif SETTINGS.openai_api_key:
             provider = "openai"
             model = "gpt-4o"
@@ -81,9 +81,9 @@ def cloud_llm(prompt: str, model: str | None = None) -> str:
             import google.generativeai as genai
             genai.configure(api_key=SETTINGS.gemini_api_key)
             
-            # 優先使用 gemini-1.5-flash，這是最容易有免費配額的模型
-            actual_model = model if model else "gemini-1.5-flash"
-            # 去除可能誤傳的 models/ 前綴，genai.GenerativeModel 會處理
+            # 優先使用 gemini-2.0-flash (依據 list_models 結果)
+            actual_model = model if model else "gemini-2.0-flash"
+            # 確保模型名稱格式正確，不帶 models/ 前綴 (SDK 會處理)
             if actual_model.startswith("models/"):
                 actual_model = actual_model.replace("models/", "")
                 

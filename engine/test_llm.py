@@ -27,8 +27,8 @@ def test_llms():
     if SETTINGS.gemini_api_key:
         print("\n[Testing Google/Gemini]...")
         try:
-            # Explicitly request a Gemini model
-            res = cloud_llm("Hello, respond with 'Gemini is working!'", model="gemini-1.5-flash")
+            # Explicitly request a Gemini model available in the list
+            res = cloud_llm("Hello, respond with 'Gemini is working!'", model="gemini-2.0-flash")
             print(f"Response: {res}")
         except Exception as e:
             print(f"Error: {e}")
