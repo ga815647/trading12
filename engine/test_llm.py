@@ -15,7 +15,8 @@ def test_llms():
     if SETTINGS.anthropic_api_key:
         print("\n[Testing Anthropic/Claude]...")
         try:
-            res = cloud_llm("Hello, respond with 'Claude is working!'", model="claude-3-5-sonnet-20240620")
+            # Use default or a widely available model
+            res = cloud_llm("Hello, respond with 'Claude is working!'")
             print(f"Response: {res}")
         except Exception as e:
             print(f"Error: {e}")
@@ -26,7 +27,8 @@ def test_llms():
     if SETTINGS.gemini_api_key:
         print("\n[Testing Google/Gemini]...")
         try:
-            res = cloud_llm("Hello, respond with 'Gemini is working!'", model="gemini-1.5-pro")
+            # Use gemini-1.5-flash which is more likely to be available for free keys
+            res = cloud_llm("Hello, respond with 'Gemini is working!'", model="gemini-1.5-flash")
             print(f"Response: {res}")
         except Exception as e:
             print(f"Error: {e}")
@@ -37,7 +39,7 @@ def test_llms():
     if SETTINGS.openai_api_key:
         print("\n[Testing OpenAI/ChatGPT]...")
         try:
-            res = cloud_llm("Hello, respond with 'ChatGPT is working!'", model="gpt-4o")
+            res = cloud_llm("Hello, respond with 'ChatGPT is working!'")
             print(f"Response: {res}")
         except Exception as e:
             print(f"Error: {e}")
