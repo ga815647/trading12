@@ -14,13 +14,25 @@ LIFECYCLE_FILE = SIGNAL_DIR / "strategy_lifecycle.json"
 
 def get_strategy_hash(hypothesis: dict[str, Any]) -> str:
     """
-    Generate a unique hash for a strategy based on its ID and parameters.
+    Generate a unique hash for a strategy based purely on its components,
+    ignoring randomized generation IDs to prevent redundant re-testing.
     """
-    h_id = str(hypothesis.get("id", ""))
+    h_id = str(hypothesis.get("id", hypothesis.get("hypothesis_id", "")))
     params = hypothesis.get("params", {})
+    
+    # Extract structural identity by stripping the randomized index (_0XXX)
+    # Format is LM_{TRIGGER}_{FILTER}_{INDEX}
+    parts = h_id.split('_')
+    if len(parts) >= 4 and parts[0] == "LM":
+        # e.g., LM_A01_E01_0369 -> LM_A01_E01
+        structural_id = "_".join(parts[:-1])
+    else:
+        structural_id = h_id
+
     # Sort keys to ensure consistent hashing
     param_str = json.dumps(params, sort_keys=True)
-    combined = f"{h_id}|{param_str}"
+    combined = f"{structural_id}|{param_str}"
+    print(f"DEBUG Hash: {structural_id} + {param_str}")
     return hashlib.sha256(combined.encode()).hexdigest()
 
 def load_lifecycle() -> dict[str, dict[str, Any]]:
@@ -47,7 +59,7 @@ def update_lifecycle(results: list[dict[str, Any]], current_bars: int):
     for res in results:
         h_id = res.get("id", "")
         params = res.get("params", {})
-        h_hash = get_strategy_hash({"id": h_id, "params": params})
+        h_hash = get_strategy_hash(res)  # Pass the entire dict to hash correctly
         
         sample_count = res.get("sample_count", 0)
         passes = res.get("passes_validation", False)
