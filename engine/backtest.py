@@ -22,6 +22,9 @@ from data.universe import UNIVERSE
 from engine.cost_model import DEFAULT_SHORT_BORROW_COST, apply_round_trip_cost
 from engine.edge_defense import filter_by_turnover
 
+# 提前啟用 pandas 新版降轉行為，讓潛在的 dtype 問題提早以 error 形式浮現
+pd.set_option('future.no_silent_downcasting', True)
+
 
 SEQUENCE_PATTERNS = {
     'trap_buy':          [-1, -1,  1, -1, -1],  
@@ -255,7 +258,7 @@ def detect_group_sequence(
     valid_leader = leader_direction.abs() >= divergence_threshold
     triggered = valid_leader & (follower_avg.abs() > divergence_threshold)
     
-    return triggered.fillna(False)
+    return triggered.fillna(False).astype(bool)
 
 
 def build_signal_series(stock_id: str, frame: pd.DataFrame, hypothesis: dict[str, Any]) -> pd.Series:
@@ -403,7 +406,8 @@ def build_signal_series(stock_id: str, frame: pd.DataFrame, hypothesis: dict[str
             inst_streak = (df["inst_total_net"] > 0).rolling(chip_days).sum() == chip_days
             price_streak = (df["close_return"] > 0).rolling(price_days).sum() == price_days
             kd_bull = df["stoch_14"] > df["stoch_d_3"]
-            return inst_streak & price_streak.shift(1).fillna(False) & kd_bull
+            price_streak_shifted = price_streak.shift(1).fillna(False).astype(bool)
+            return inst_streak & price_streak_shifted & kd_bull
         elif t_id == "M01":
             return detect_group_sequence(df["foreign_net"], df["trust_net"], 3, 5, divergence_threshold)
         elif t_id == "M02":
