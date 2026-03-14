@@ -19,7 +19,8 @@ MIN_RECENT_2Y_TRADES = 10
 
 # Edge defense (liquidity). FinMind Volume = shares. 1 lot = 1000 shares.
 SHARES_PER_LOT = 1000
-MIN_DAILY_VOLUME_LOTS = 100
+MIN_DAILY_TURNOVER_NTD = 20000000  # 20M NTD Minimum Daily Turnover
+TRANSACTION_COST_PCT = 0.00585    # Total friction (Fee 0.285% + Tax 0.3%)
 EDGE_DEFENSE_ENABLED = True
 DATA_DIR = ROOT_DIR / "data"
 PARQUET_DIR = DATA_DIR / "parquet_db"

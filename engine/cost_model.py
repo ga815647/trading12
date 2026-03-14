@@ -1,14 +1,13 @@
 from __future__ import annotations
+from config.config import TRANSACTION_COST_PCT
 
-
-BACKTEST_COMMISSION = 0.002925
-ROUND_TRIP_COST = BACKTEST_COMMISSION * 2
 DEFAULT_SHORT_BORROW_COST = 0.003
 
-
 def apply_round_trip_cost(raw_return: float) -> float:
-    return raw_return - ROUND_TRIP_COST
-
+    """
+    Deducts the total friction (Fee + Tax) from the raw return.
+    """
+    return raw_return - TRANSACTION_COST_PCT
 
 def minimum_gross_return() -> float:
-    return ROUND_TRIP_COST
+    return TRANSACTION_COST_PCT

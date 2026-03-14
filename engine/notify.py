@@ -14,23 +14,26 @@ from config.config import SETTINGS
 
 
 def send_signal(message: str) -> bool:
-    if not SETTINGS.telegram_bot_token or not SETTINGS.telegram_chat_id:
-        print(f"Skipping notification: Token={bool(SETTINGS.telegram_bot_token)}, ChatID={bool(SETTINGS.telegram_chat_id)}")
+    if not SETTINGS.telegram_bot_token or not SETTINGS.telegram_chat_ids:
+        print(f"Skipping notification: Token={bool(SETTINGS.telegram_bot_token)}, IDs={len(SETTINGS.telegram_chat_ids)}")
         return False
         
     url = f"https://api.telegram.org/bot{SETTINGS.telegram_bot_token}/sendMessage"
-    payload = {"chat_id": SETTINGS.telegram_chat_id, "text": message}
+    success = False
     
-    try:
-        response = requests.post(url, json=payload, timeout=15)
-        if response.status_code != 200:
-            print(f"Telegram Error: {response.status_code} - {response.text}")
-            print(f"Payload was: {payload}")
-        response.raise_for_status()
-        return True
-    except Exception as e:
-        print(f"Failed to send Telegram signal: {e}")
-        return False
+    for chat_id in SETTINGS.telegram_chat_ids:
+        payload = {"chat_id": chat_id, "text": message}
+        try:
+            response = requests.post(url, json=payload, timeout=15)
+            if response.status_code != 200:
+                print(f"Telegram Error for ID {chat_id}: {response.status_code} - {response.text}")
+            else:
+                success = True
+            response.raise_for_status()
+        except Exception as e:
+            print(f"Failed to send Telegram signal to {chat_id}: {e}")
+            
+    return success
 
 
 def build_signal_message(signal: dict[str, Any], pipeline: str = "long") -> str:
