@@ -165,6 +165,8 @@ def main():
     parser.add_argument("--gen-hypotheses", type=str, choices=["True", "False"], default="True", help="Whether to run strategy generation")
     parser.add_argument("--gen-count", type=int, default=1000, help="Max strategies to generate")
     parser.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 1) - 2))
+    parser.add_argument("--paper-mode", action="store_true", default=False,
+                        help="實測模式：推播所有管線的全市場訊號，忽略 portfolio.json。")
     args = parser.parse_args()
 
     # Convert gen-hypotheses to bool
@@ -319,7 +321,10 @@ def main():
 
         # 7. Daily Scan
         if SHUTDOWN_REQUESTED: check_shutdown()
-        scan_output = run_step("Daily Scan", [sys.executable, "engine/run_daily_scan.py"])
+        scan_cmd = [sys.executable, "engine/run_daily_scan.py"]
+        if args.paper_mode:
+            scan_cmd.append("--paper-mode")
+        scan_output = run_step("Daily Scan", scan_cmd)
         
         # 8. Reporting
         if SHUTDOWN_REQUESTED: check_shutdown()

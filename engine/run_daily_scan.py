@@ -62,19 +62,21 @@ def check_time_exits(detailed_holdings: list[dict], market_cache: dict[str, pd.D
     return exit_signals
 
 
-def run_daily_scan(signal_library: list[dict], symbols: list[str] | None = None) -> dict[str, list[dict]]:
+def run_daily_scan(signal_library: list[dict], symbols: list[str] | None = None, paper_mode: bool = False) -> dict[str, list[dict]]:
     """
     運行三管線每日掃描
+    paper_mode=True 時忽略 portfolio.json，對全市場推播所有訊號（實測用）
     """
     from engine.backtest import evaluate_latest_signal, load_market_cache, infer_direction
     from engine.portfolio import get_detailed_holdings
 
-    detailed_holdings = get_detailed_holdings()
+    detailed_holdings = get_detailed_holdings() if not paper_mode else []
     current_holding_symbols = [h["symbol"] for h in detailed_holdings]
 
     # 定義各管線的目標股票
     long_universe = set(symbols or UNIVERSE)
-    exit_universe = set(current_holding_symbols)
+    # Paper Mode: 對全體 UNIVERSE 掃描賣出管線，而非只看持倉
+    exit_universe = set(symbols or UNIVERSE) if paper_mode else set(current_holding_symbols)
     short_universe = set(UNIVERSE[:100])
     
     # 載入市場資料快取
@@ -131,6 +133,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Scan latest market data for active signals.")
     parser.add_argument("--input", default=str(SIGNAL_DIR / "library.enc"))
     parser.add_argument("--symbol", action="append", dest="symbols")
+    parser.add_argument(
+        "--paper-mode", action="store_true", default=False,
+        help="Paper mode: scan full UNIVERSE for all pipelines, ignoring portfolio.json (testing use)."
+    )
     return parser.parse_args()
 
 
@@ -143,7 +149,9 @@ def main() -> None:
             f"Signal library not found: {input_path}. Run engine/validator.py first."
         )
     signal_library = load_signals(input_path)
-    voted_signals = run_daily_scan(signal_library, symbols=args.symbols)
+    if args.paper_mode:
+        print("[Paper Mode] 實測模式：忽略持倉，推播所有管線的全市場訊號。")
+    voted_signals = run_daily_scan(signal_library, symbols=args.symbols, paper_mode=args.paper_mode)
     
     # 處理各管線的訊號
     total_sent = 0
