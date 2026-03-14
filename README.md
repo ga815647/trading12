@@ -9,9 +9,10 @@
 
 - 從 FinMind 抓取台股日線、籌碼、融資融券資料
 - 批次生成多組策略假設
-- 對假設進行跨股票回測
-- 用統計與市場循環條件過濾策略
-- 針對最新資料掃描觸發訊號
+- 跨股票、跨時間序列的高效平行回測 (ProcessPoolExecutor)
+- 多層過濾與統計校正 (FDR adjusted p-value)
+- 視覺化 X 光診斷工具 (run_xray_test.py)
+- 完整的中斷保護與資源清理機制
 - 將通過投票的訊號送到 Telegram
 
 ## 系統流程
@@ -22,9 +23,12 @@
 2. 執行 `python engine/preflight.py`
 3. 執行 `python data/fetcher.py --mode full`
 4. 執行 `python agents/hypothesis_generator.py`
-5. 執行 `python engine/run_backtests.py`
+5. 執行 `python engine/run_backtests.py --workers 4 --progress`
 6. 執行 `python engine/validator.py`
 7. 執行 `python engine/run_daily_scan.py`
+
+及時研判工具：
+- 執行 `python engine/run_xray_test.py` (針對特定訊號做白盒驗證)
 
 日常更新通常只需要：
 
@@ -196,6 +200,13 @@ python engine/run_backtests.py --workers 4 --chunksize 10
 python engine/run_backtests.py --start-index 0 --count 300
 ```
 
+### 4.1 回測效能與中斷保護 (New)
+
+- **高效平行化**：使用 `ProcessPoolExecutor` 自動分配核心，建議保留 1-2 核給作業系統以免當機。
+- **強健性中斷**：支援 `Ctrl+C` 訊號捕捉。
+    - 按下 **1 次**：觸發優雅停止，系統會嘗試存下目前的進度後退出。
+    - 按下 **2 次**：強制核彈級終止，立即擊殺所有平行進程，不留殭屍程序。
+
 回測特性：
 
 - 以全股票池逐一套用假設
@@ -302,7 +313,19 @@ python engine/inspect_signal.py --hypothesis-id B05_0063 --lookback-days 5 --out
 
 - 檢查某個策略是否真的在最近市場條件下活躍
 - 匯出近期觸發股票清單給人工複核
-- 對 `B05` 類型額外查看 near miss 與條件拆解
+
+## X-Ray 白盒驗證程式 (New)
+
+當您對某個策略的觸發邏輯有疑慮時，使用 `run_xray_test.py`：
+
+```powershell
+python engine/run_xray_test.py --symbol 2330 --hypothesis-id LM_A01_FLT_UP_TREND_0003
+```
+
+此工具會：
+1. **解構訊號**：分開顯示 Trigger 與 Filter 的觸發狀態。
+2. **揭露指標細節**：印出觸發當下的外資賣超、KD 分值、成交量等具體數值。
+3. **驗證 T+1 進場**：檢查 T 日訊號與 T+1 開盤價的對應關係，確保無未來函數。
 
 ## 目錄結構
 
