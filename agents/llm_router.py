@@ -24,26 +24,34 @@ def cloud_llm(prompt: str, model: str | None = None) -> str:
     """
     智能路由 LLM 請求到可用的 Provider (Anthropic, OpenAI, 或 Google Gemini)
     """
-    # 根據提供者判斷
-    if model and model.startswith("gpt-"):
-        provider = "openai"
-    elif model and (model.startswith("gemini-") or "gemini" in model.lower()):
-        provider = "gemini"
-    elif model and (model.startswith("claude-") or "claude" in model.lower()):
-        provider = "anthropic"
+    # 自動偵測：根據金鑰存在情況與模型關鍵字進行路由
+    if model:
+        m_lower = model.lower()
+        if "gpt-" in m_lower:
+            provider = "openai"
+        elif "gemini" in m_lower:
+            provider = "gemini"
+        elif "claude" in m_lower:
+            provider = "anthropic"
+        else:
+            # 指定了模型名稱但不知是哪家，嘗試依據可用金鑰推測
+            if SETTINGS.anthropic_api_key: provider = "anthropic"
+            elif SETTINGS.gemini_api_key: provider = "gemini"
+            elif SETTINGS.openai_api_key: provider = "openai"
+            else: raise ValueError(f"Unknown model '{model}' and no API keys found.")
     else:
-        # 自動偵測：優先順序 Anthropic > Gemini > OpenAI
+        # 完全沒指定模型，按優先級找可用金鑰
         if SETTINGS.anthropic_api_key:
             provider = "anthropic"
-            model = model or "claude-3-5-sonnet-20240620"
+            model = "claude-3-5-sonnet-20240620"
         elif SETTINGS.gemini_api_key:
             provider = "gemini"
-            model = model or "gemini-1.5-pro"
+            model = "gemini-1.5-flash"
         elif SETTINGS.openai_api_key:
             provider = "openai"
-            model = model or "gpt-4o"
+            model = "gpt-4o"
         else:
-            raise ValueError("No LLM API keys (Anthropic, Gemini, or OpenAI) found in environment.")
+            raise ValueError("No LLM API keys found in environment.")
 
     try:
         if provider == "anthropic":
@@ -73,11 +81,11 @@ def cloud_llm(prompt: str, model: str | None = None) -> str:
             import google.generativeai as genai
             genai.configure(api_key=SETTINGS.gemini_api_key)
             
-            # Use gemini-1.5-flash as a more likely available default for free tier
+            # 優先使用 gemini-1.5-flash，這是最容易有免費配額的模型
             actual_model = model if model else "gemini-1.5-flash"
-            # Some environments require 'models/' prefix
-            if "gemini" in actual_model and not actual_model.startswith("models/"):
-                actual_model = f"models/{actual_model}"
+            # 去除可能誤傳的 models/ 前綴，genai.GenerativeModel 會處理
+            if actual_model.startswith("models/"):
+                actual_model = actual_model.replace("models/", "")
                 
             model_instance = genai.GenerativeModel(model_name=actual_model, system_instruction=SAFETY_PROMPT)
             response = model_instance.generate_content(prompt)
