@@ -23,6 +23,16 @@ GROUP_MAP = {
     "M": "group_behavior",   # 群體行為序列與背離
 }
 
+# 獨立性分群：同一 cluster 的 group 只算 1 票
+# chip 和 chip_sequence 都看三大法人，邏輯不獨立
+GROUP_INDEPENDENCE_CLUSTERS = {
+    "chip_cluster":      {"chip", "chip_sequence", "composite"},
+    "technical_cluster": {"momentum", "mean_reversion", "price_volume", "contrarian"},
+    "sentiment_cluster": {"sentiment"},
+    "time_cluster":      {"calendar"},
+    "group_cluster":     {"group_behavior"},
+}
+
 
 def classify_group(hypothesis_id: str) -> str:
     return GROUP_MAP.get(str(hypothesis_id)[:1], "other")
@@ -73,9 +83,6 @@ def select_signal_library(
         signal["group"] = classify_group(signal.get("id", ""))
         signal["signal_id"] = build_signal_id(signal)
         selected.append(signal)
-    return selected
-
-
     return selected
 
 

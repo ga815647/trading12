@@ -164,7 +164,7 @@ def validate_backtests(
                 candidate.get("sample_count", 0) >= min_sample_count,
                 candidate.get("win_rate", 0.0) >= min_win_rate,
                 candidate.get("oos_win_rate", 0.0) >= min_oos_win_rate,
-                candidate.get("sharpe", 0.0) >= min_sharpe,
+                candidate.get("portfolio_sharpe", 0.0) >= min_sharpe,
                 adjusted_p < max_adjusted_p_value,
                 passed_cycle,
                 weighted_wr >= _min_wr,

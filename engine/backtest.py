@@ -16,6 +16,7 @@ from config.config import (
 )
 from datetime import datetime, timedelta
 from collections import defaultdict
+from scipy import stats
 from data.processor import merge_market_data
 from data.universe import UNIVERSE
 from engine.cost_model import DEFAULT_SHORT_BORROW_COST, apply_round_trip_cost
@@ -615,9 +616,21 @@ def summarize_hypothesis(hypothesis: dict[str, Any], trades: list[dict[str, Any]
         )
         return summary
 
-    returns = np.asarray(summary["trade_returns"], dtype=float)
-    split_idx = max(1, int(len(returns) * 0.7))
-    oos_slice = returns[split_idx:]
+    cutoff = max(
+        datetime.strptime(t["exit_date"], "%Y-%m-%d") for t in trades
+    ) - timedelta(days=OOS_YEARS * 365)
+
+    is_returns  = np.asarray(
+        [t["net_return"] for t in trades
+         if datetime.strptime(t["exit_date"], "%Y-%m-%d") < cutoff],
+        dtype=float
+    )
+    oos_returns = np.asarray(
+        [t["net_return"] for t in trades
+         if datetime.strptime(t["exit_date"], "%Y-%m-%d") >= cutoff],
+        dtype=float
+    )
+    returns = np.asarray(summary["trade_returns"], dtype=float)  # 全量，僅用於 p_value/avg
     avg_holding = mean(trade["holding_days"] for trade in trades)
     sharpe_scale = math.sqrt(252 / max(avg_holding, 1))
     
@@ -641,12 +654,15 @@ def summarize_hypothesis(hypothesis: dict[str, Any], trades: list[dict[str, Any]
 
     summary.update(
         {
-            "win_rate": float((returns > 0).mean()),
-            "oos_win_rate": float((oos_slice > 0).mean()) if len(oos_slice) else 0.0,
-            "avg_return": float(np.mean(returns)),
-            "median_return": float(np.median(returns)),
-            "sharpe": sharpe,
-            "p_value": p_value,
+            "win_rate":        float((is_returns > 0).mean()) if len(is_returns) else 0.0,
+            "oos_win_rate":    float((oos_returns > 0).mean()) if len(oos_returns) else 0.0,
+            "is_count":        int(len(is_returns)),
+            "oos_count":       int(len(oos_returns)),
+            "avg_return":      float(np.mean(returns)),
+            "median_return":   float(np.median(returns)),
+            "sharpe":          sharpe,            # 保留 per-trade sharpe 供參考
+            "portfolio_sharpe": portfolio_sharpe, # 新增：組合層面 sharpe
+            "p_value":         p_value,
         }
     )
     return summary
