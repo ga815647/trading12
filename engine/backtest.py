@@ -413,6 +413,9 @@ def build_signal_series(stock_id: str, frame: pd.DataFrame, hypothesis: dict[str
             return df["Volume"].shift(1) < (vol_ma5.shift(1) * 0.8)
         elif t_id == "FLT_KD_OVERSOLD":
             return (df["stoch_14"] < 30) & (df["stoch_d_3"] < 30)
+        elif t_id.startswith("TVA") or t_id.startswith("PZ_"):
+            # These are parameter-based post-filters handled later in step 3/4
+            return pd.Series(True, index=df.index)
         elif prefix == "E":
             return df["rsi_14"] < indicator_val
         else:
