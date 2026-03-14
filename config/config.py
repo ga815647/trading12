@@ -13,8 +13,8 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 
 # Time decay (validator)
 TIME_DECAY_LAMBDA = 1.0
-MIN_WEIGHTED_WIN_RATE = 0.54
-MIN_RECENT_2Y_WIN_RATE = 0.52
+MIN_WEIGHTED_WIN_RATE = 0.51
+MIN_RECENT_2Y_WIN_RATE = 0.50
 MIN_RECENT_2Y_TRADES = 10
 
 # Edge defense (liquidity). FinMind Volume = shares. 1 lot = 1000 shares.

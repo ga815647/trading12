@@ -81,9 +81,9 @@ def dedupe_backtests(backtests: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def validate_backtests(
     backtests: list[dict[str, Any]],
     min_sample_count: int = 200,
-    min_win_rate: float = 0.55,
-    min_oos_win_rate: float = 0.53,
-    min_sharpe: float = 1.0,
+    min_win_rate: float = 0.52,
+    min_oos_win_rate: float = 0.50,
+    min_sharpe: float = 0.3,
     max_adjusted_p_value: float = 0.05,
     min_weighted_win_rate: float | None = None,
     min_recent_2y_win_rate: float | None = None,
