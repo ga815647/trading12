@@ -3,7 +3,7 @@ import json
 import logging
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -45,6 +45,33 @@ def get_latest_market_date() -> str | None:
         logger.warning(f"Error reading market date: {e}")
     return None
 
+def get_theoretical_latest_trading_day() -> str:
+    """
+    Returns the YYYY-MM-DD string of the latest expected trading day.
+    """
+    now = datetime.now()
+    wd = now.weekday()  # Mon=0...Sun=6
+    
+    # If Sat=5, latest is Fri (now-1)
+    # If Sun=6, latest is Fri (now-2)
+    # If Mon-Fri and before 15:30, latest is T-1
+    if wd == 5:
+        latest = now - timedelta(days=1)
+    elif wd == 6:
+        latest = now - timedelta(days=2)
+    else:
+        # Weekday: check if market results should be out (15:30)
+        if now.hour < 15 or (now.hour == 15 and now.minute < 30):
+            # Prior trading day
+            if wd == 0:  # Mon morning -> Fri
+                latest = now - timedelta(days=3)
+            else:
+                latest = now - timedelta(days=1)
+        else:
+            latest = now
+    
+    return latest.strftime("%Y-%m-%d")
+
 def run_step(name: str, cmd: list[str], cwd: Path = ROOT_DIR):
     logger.info(f">>> Starting Step: {name}")
     logger.info(f"Command: {' '.join(cmd)}")
@@ -61,28 +88,42 @@ def main():
     parser = argparse.ArgumentParser(description="Master Pipeline Orchestrator")
     parser.add_argument("--mode", choices=["local", "llm"], default="local")
     parser.add_argument("--skip-fetch", action="store_true", help="Skip data fetching")
+    parser.add_argument("--force", action="store_true", help="Force run all steps regardless of date guard")
     parser.add_argument("--workers", type=int, default=4)
     args = parser.parse_args()
 
     start_time = datetime.now()
     logger.info(f"===== Orchestrator Pulse Start: {start_time.isoformat()} =====")
+    if args.force:
+        logger.info("🚀 [Force Mode] Activated. Guards will be ignored.")
 
     try:
-        # Check date before fetch
+        # Pre-Fetch Guard
         date_before = get_latest_market_date()
-        logger.info(f"Market Date Before Fetch: {date_before}")
+        theoretical_latest = get_theoretical_latest_trading_day()
+        
+        logger.info(f"Market Date (Local): {date_before}")
+        logger.info(f"Theoretical Latest: {theoretical_latest}")
+
+        skip_fetch_reason = None
+        if args.skip_fetch:
+            skip_fetch_reason = "Manual skip"
+        elif date_before == theoretical_latest and not args.force:
+            skip_fetch_reason = f"Data already up-to-date ({date_before})"
 
         # 1. Data Prep
-        if not args.skip_fetch:
+        if not skip_fetch_reason:
             run_step("Data Fetch", [sys.executable, "data/fetcher.py", "--mode", "daily"])
+        else:
+            logger.info(f"🛡️ [Pre-Fetch Guard] Skipping fetch: {skip_fetch_reason}")
 
-        # Check date after fetch
+        # Post-Fetch Final Guard
         date_after = get_latest_market_date()
-        logger.info(f"Market Date After Fetch: {date_after}")
+        logger.info(f"Market Date After Fetch/Check: {date_after}")
 
-        if not args.skip_fetch and date_before == date_after and date_after is not None:
-            logger.info("🛡️ [State Guard] No new market data detected. Aborting scan to prevent alert fatigue.")
-            print("\n🛡️ 今日無新交易資料，安全守衛攔截。跳過後續掃描與推播。")
+        if not args.force and date_before == date_after and date_after is not None:
+            logger.info("🛡️ [State Guard] No data change detected. Aborting scan.")
+            print(f"\n🛡️ 今日無新交易資料 ({date_after})，安全守衛攔截。")
             return
 
         # 2. Generation & Lifecycle Filtering
