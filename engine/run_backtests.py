@@ -4,7 +4,8 @@ import argparse
 import json
 import os
 import sys
-from concurrent.futures import ProcessPoolExecutor, as_completed, BrokenProcessPool
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
