@@ -16,6 +16,7 @@ if str(ROOT_DIR) not in sys.path:
 try:
     from engine.time_decay import compute_weighted_win_rate, compute_recent_stats
     from config.market_cycle import label_date
+    from config.encrypt import load_signals, load_encrypted_json
     from config.config import (
         MIN_SAMPLE_COUNT,
         MIN_WIN_RATE,
@@ -25,6 +26,7 @@ try:
         MIN_WEIGHTED_WIN_RATE,
         MIN_RECENT_2Y_WIN_RATE,
         MIN_RECENT_2Y_TRADES,
+        MIN_CYCLE_SAMPLES,
         SIGNAL_DIR,
         BACKTEST_DIR
     )
@@ -130,7 +132,7 @@ def diagnose_backtests():
             for k in cycle_metrics:
                 cycle_metrics[k].append(counts[k])
                 
-            if not all(c >= 30 for c in counts.values()): # validator uses min 30 default normally, or from config
+            if not all(c >= MIN_CYCLE_SAMPLES for c in counts.values()):
                 stats_fail["cycle_pass 失敗"] += 1
                 passed_all = False
 
