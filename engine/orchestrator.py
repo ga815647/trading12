@@ -32,7 +32,14 @@ def shutdown_handler(signum, frame):
         SHUTDOWN_REQUESTED = True
         logger.info("\n[System] 🛑 收到中斷指令，正在安全停止所有平行任務並清理程序...")
     else:
-        logger.warning("[System] ⚠️ 已在執行中斷流程，請勿重複操作。")
+        # Nuclear option: if user presses Ctrl+C again, kill EVERYTHING immediately
+        print("\n[System] ⚠️ 再次收到中斷指令，強制執行核彈級終止！", flush=True)
+        if sys.platform != "win32":
+            try:
+                os.killpg(0, signal.SIGKILL)
+            except:
+                pass
+        os._exit(1)
 
 def check_shutdown():
     if SHUTDOWN_REQUESTED:
@@ -199,6 +206,13 @@ def main():
         # 2. Generation & Lifecycle Filtering
         logger.info(">>> Segment: Generation & Lifecycle Filter")
         if args.gen_hypotheses:
+            # Cleanup HYPOTHESIS_DIR before generation to prevent loading thousands of stale files
+            for old_json in HYPOTHESIS_DIR.glob("*.json"):
+                try:
+                    old_json.unlink()
+                except:
+                    pass
+
             if args.mode == "local":
                 from agents.local_hypothesis_generator import generate_local_factory
                 logger.info(f"Running Local Matrix Generation (max_count={args.gen_count})")
@@ -210,13 +224,22 @@ def main():
             logger.info("🛡️ [Orchestrator] Strategy generation skipped by command.")
             print("\n🛡️ [Orchestrator] 依指令跳過策略產生階段，測試既有或凍結名單。")
 
-        # Load all hypotheses from HYPOTHESIS_DIR
-        hypo_files = list(HYPOTHESIS_DIR.glob("*.json"))
+        # Load only relevant hypotheses (prevent loading thousands of historical files)
+        # If we just generated them, they are in matrix_batch_*.json or orchestrator_batch.json
+        hypo_files = list(HYPOTHESIS_DIR.glob("matrix_batch_*.json")) + \
+                     list(HYPOTHESIS_DIR.glob("orchestrator_batch.json"))
+        
+        # Fallback if no specific batches found but we want to test whatever is there
+        if not hypo_files:
+            hypo_files = list(HYPOTHESIS_DIR.glob("*.json"))
+
         all_hypotheses = []
         for hf in hypo_files:
             try:
                 with open(hf, "r", encoding="utf-8") as f:
-                    all_hypotheses.extend(json.load(f))
+                    batch = json.load(f)
+                    if isinstance(batch, list):
+                        all_hypotheses.extend(batch)
             except Exception as e:
                 logger.warning(f"Failed to load {hf}: {e}")
 
