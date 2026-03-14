@@ -12,13 +12,20 @@ if str(ROOT_DIR) not in sys.path:
 
 from config.config import (
     BACKTEST_DIR,
+    MAX_ADJUSTED_P_VALUE,
+    MIN_CYCLE_SAMPLES,
+    MIN_OOS_WIN_RATE,
     MIN_RECENT_2Y_TRADES,
     MIN_RECENT_2Y_WIN_RATE,
+    MIN_SAMPLE_COUNT,
+    MIN_SHARPE,
     MIN_WEIGHTED_WIN_RATE,
+    MIN_WIN_RATE,
     SIGNAL_DIR,
     TIME_DECAY_LAMBDA,
     ensure_runtime_dirs,
 )
+from collections import defaultdict
 from config.encrypt import load_encrypted_json, save_signal
 from config.market_cycle import label_date
 from engine.portfolio import select_signal_library
@@ -46,7 +53,21 @@ def _adjust_p_values(values: list[float]) -> list[float]:
         return adjusted
 
 
-def _cycle_pass(trade_dates: list[str], minimum: int = 30) -> tuple[bool, dict[str, int]]:
+def _group_key(item: dict) -> str:
+    """
+    從 hypothesis_id 萃取 trigger 家族。
+    LM_A01_TVA1_0023 → "A01"
+    LM_K03_NONE_0001 → "K03"
+    A01_0001         → "A01"（舊格式相容）
+    """
+    h_id = str(item.get("hypothesis_id", item.get("id", "")))
+    if h_id.startswith("LM_"):
+        parts = h_id.split("_")
+        return parts[1] if len(parts) >= 2 else "unknown"
+    return h_id[:3]  # 例如 "A01"
+
+
+def _cycle_pass(trade_dates: list[str], minimum: int = MIN_CYCLE_SAMPLES) -> tuple[bool, dict[str, int]]:
     counts = {"bull": 0, "bear": 0, "sideways": 0}
     for trade_date in trade_dates:
         counts[label_date(trade_date)] += 1
@@ -80,11 +101,11 @@ def dedupe_backtests(backtests: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def validate_backtests(
     backtests: list[dict[str, Any]],
-    min_sample_count: int = 200,
-    min_win_rate: float = 0.52,
-    min_oos_win_rate: float = 0.50,
-    min_sharpe: float = 0.3,
-    max_adjusted_p_value: float = 0.05,
+    min_sample_count: int = MIN_SAMPLE_COUNT,
+    min_win_rate: float = MIN_WIN_RATE,
+    min_oos_win_rate: float = MIN_OOS_WIN_RATE,
+    min_sharpe: float = MIN_SHARPE,
+    max_adjusted_p_value: float = MAX_ADJUSTED_P_VALUE,
     min_weighted_win_rate: float | None = None,
     min_recent_2y_win_rate: float | None = None,
     min_recent_2y_trades: int | None = None,
@@ -95,29 +116,30 @@ def validate_backtests(
     _min_recent_n = min_recent_2y_trades if min_recent_2y_trades is not None else MIN_RECENT_2Y_TRADES
     _lambda = time_decay_lambda if time_decay_lambda is not None else TIME_DECAY_LAMBDA
 
-    p_values = [float(item.get("p_value", 1.0)) for item in backtests]
-    adjusted = _adjust_p_values(p_values) if p_values else []
+    # FDR 校正改為按 Trigger 家族分組做
+    groups = defaultdict(list)
+    for idx, item in enumerate(backtests):
+        groups[_group_key(item)].append((idx, item))
 
-    # Find global anchor date for the batch
-    all_trade_dates = []
-    for item in backtests:
-        all_trade_dates.extend(item.get("trade_dates", []))
-    
-    from datetime import datetime
-    global_anchor: datetime | None = None
-    if all_trade_dates:
-        global_anchor = max(_parse_date(d) for d in all_trade_dates)
+    adjusted = [1.0] * len(backtests)
+    for group_key, group_items in groups.items():
+        indices = [i for i, _ in group_items]
+        p_vals  = [float(backtests[i].get("p_value", 1.0)) for i in indices]
+        adj     = _adjust_p_values(p_vals)
+        for i, adj_p in zip(indices, adj):
+            adjusted[i] = adj_p
 
     validated: list[dict[str, Any]] = []
     for item, adjusted_p in zip(backtests, adjusted):
         trade_dates = item.get("trade_dates", [])
         trade_returns = item.get("trade_returns", [])
         
+        # 每個策略用自己的最新交易日當 anchor (anchor=None)
         weighted_wr, _ = compute_weighted_win_rate(
-            trade_dates, trade_returns, decay_lambda=_lambda, anchor=global_anchor
+            trade_dates, trade_returns, decay_lambda=_lambda, anchor=None
         )
         recent_wr, recent_count = compute_recent_stats(
-            trade_dates, trade_returns, anchor=global_anchor
+            trade_dates, trade_returns, anchor=None
         )
 
         # Small Sample Size Defense: Bayesian Smoothing towards 0.5

@@ -12,7 +12,10 @@ from config.config import (
     MIN_DAILY_TURNOVER_NTD,
     SHARES_PER_LOT,
     TRANSACTION_COST_PCT,
+    OOS_YEARS,
 )
+from datetime import datetime, timedelta
+from collections import defaultdict
 from data.processor import merge_market_data
 from data.universe import UNIVERSE
 from engine.cost_model import DEFAULT_SHORT_BORROW_COST, apply_round_trip_cost
@@ -396,9 +399,10 @@ def build_signal_series(stock_id: str, frame: pd.DataFrame, hypothesis: dict[str
         elif t_id == "K05":
             return detect_sequence(df["foreign_net"], pattern_name, threshold_a) & (df["stoch_14"] < indicator_val)
         elif t_id == "L01":
-            inst_buy = df["inst_total_net"] > 0
-            limit_up = ((df["Close"] - df["PrevClose"]) / df["PrevClose"].replace(0, np.nan)) >= 0.095
-            return inst_buy.rolling(chip_days).sum().shift(price_days).fillna(0) == chip_days # Simplification
+            inst_streak = (df["inst_total_net"] > 0).rolling(chip_days).sum() == chip_days
+            price_streak = (df["close_return"] > 0).rolling(price_days).sum() == price_days
+            kd_bull = df["stoch_14"] > df["stoch_d_3"]
+            return inst_streak & price_streak.shift(1).fillna(False) & kd_bull
         elif t_id == "M01":
             return detect_group_sequence(df["foreign_net"], df["trust_net"], 3, 5, divergence_threshold)
         elif t_id == "M02":
@@ -543,6 +547,46 @@ def backtest_stock(
         
     return trades
 
+def _portfolio_sharpe(trades: list[dict]) -> float:
+    """
+    把同日在倉的交易合併成當日組合報酬，再計算年化 Sharpe。
+    每筆交易在 entry_date 到 exit_date 之間每個交易日貢獻 net_return / holding_days。
+    最後對每個日期的平均報酬計算 Sharpe。
+    """
+    if not trades:
+        return 0.0
+    
+    # 若 trades 數量超過 10000 筆，抽樣最近 2000 筆以控制效能
+    if len(trades) > 10000:
+        trades = trades[-2000:]
+    
+    daily_returns = defaultdict(list)
+    
+    for trade in trades:
+        try:
+            entry = datetime.strptime(trade["entry_date"], "%Y-%m-%d")
+            exit_  = datetime.strptime(trade["exit_date"],  "%Y-%m-%d")
+            holding = max(trade["holding_days"], 1)
+            daily_ret = trade["net_return"] / holding
+            
+            current = entry
+            while current <= exit_:
+                daily_returns[current].append(daily_ret)
+                current += timedelta(days=1)
+        except Exception:
+            continue
+    
+    if not daily_returns:
+        return 0.0
+    
+    sorted_dates = sorted(daily_returns.keys())
+    port_returns = np.array([np.mean(daily_returns[d]) for d in sorted_dates])
+    
+    if len(port_returns) < 5 or np.std(port_returns, ddof=1) == 0:
+        return 0.0
+    
+    return float(np.mean(port_returns) / np.std(port_returns, ddof=1) * np.sqrt(252))
+
 
 def summarize_hypothesis(hypothesis: dict[str, Any], trades: list[dict[str, Any]]) -> dict[str, Any]:
     summary = {
@@ -565,6 +609,7 @@ def summarize_hypothesis(hypothesis: dict[str, Any], trades: list[dict[str, Any]
                 "avg_return": 0.0,
                 "median_return": 0.0,
                 "sharpe": 0.0,
+                "portfolio_sharpe": 0.0,
                 "p_value": 1.0,
             }
         )
@@ -575,11 +620,12 @@ def summarize_hypothesis(hypothesis: dict[str, Any], trades: list[dict[str, Any]
     oos_slice = returns[split_idx:]
     avg_holding = mean(trade["holding_days"] for trade in trades)
     sharpe_scale = math.sqrt(252 / max(avg_holding, 1))
+    
+    # Calculate individual trade sharpe
     if len(returns) > 1 and np.std(returns, ddof=1) > 0:
         sharpe = float(np.mean(returns) / np.std(returns, ddof=1) * sharpe_scale)
         try:
-            from scipy import stats
-
+            # Assuming scipy.stats is imported
             p_value = float(
                 stats.ttest_1samp(returns, popmean=0.0, alternative="greater").pvalue
             )
@@ -589,6 +635,10 @@ def summarize_hypothesis(hypothesis: dict[str, Any], trades: list[dict[str, Any]
     else:
         sharpe = 0.0
         p_value = 1.0
+
+    # Calculate portfolio sharpe
+    portfolio_sharpe = _portfolio_sharpe(trades)
+
     summary.update(
         {
             "win_rate": float((returns > 0).mean()),

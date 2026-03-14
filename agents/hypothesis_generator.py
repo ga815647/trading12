@@ -200,6 +200,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    import warnings
+    warnings.warn(
+        "hypothesis_generator.py is deprecated. "
+        "Use agents/local_hypothesis_generator.py instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     args = parse_args()
     ensure_runtime_dirs()
     hypotheses = generate_all(batch_size=args.batch_size, random_seed=args.seed)

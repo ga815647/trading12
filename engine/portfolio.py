@@ -76,6 +76,30 @@ def select_signal_library(
     return selected
 
 
+    return selected
+
+
+def count_independent_votes(groups: list[str]) -> int:
+    """
+    計算真正獨立的訊號數量。
+    同一 cluster 內的 groups 只算 1 票。
+    """
+    triggered_clusters = set()
+    standalone = 0
+    
+    for group in groups:
+        found = False
+        for cluster_name, cluster_members in GROUP_INDEPENDENCE_CLUSTERS.items():
+            if group in cluster_members:
+                triggered_clusters.add(cluster_name)
+                found = True
+                break
+        if not found:
+            standalone += 1  # 不在任何 cluster 的 group 單獨算一票
+    
+    return len(triggered_clusters) + standalone
+
+
 def vote_signals(triggers: list[dict[str, Any]]) -> list[dict[str, Any]]:
     buckets: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for trigger in triggers:
@@ -84,15 +108,20 @@ def vote_signals(triggers: list[dict[str, Any]]) -> list[dict[str, Any]]:
     voted: list[dict[str, Any]] = []
     for (stock_id, direction), items in buckets.items():
         groups = sorted({item["group"] for item in items})
-        # 對於 exit 管線，一個 group (例如 time) 觸發就應該推播
-        if direction != "exit" and len(groups) < 2:
+        independent_votes = count_independent_votes(groups)
+        
+        # exit 管線：1 個觸發就推播
+        # 其他管線：需要至少 2 個獨立來源
+        if direction != "exit" and independent_votes < 2:
             continue
+            
         voted.append(
             {
                 "stock_id": stock_id,
                 "direction": direction,
                 "groups": groups,
-                "stars": min(3, len(groups)),
+                "independent_votes": independent_votes,
+                "stars": min(3, independent_votes),
                 "signals": sorted(items, key=lambda item: item.get("horizon_days", 0), reverse=True),
             }
         )

@@ -1,3 +1,5 @@
+# NOTE: agents/hypothesis_generator.py (old format, batch_001.json) is DEPRECATED.
+# Use agents/local_hypothesis_generator.py instead.
 import argparse
 import json
 import logging
@@ -234,7 +236,10 @@ def main():
         
         # Fallback if no specific batches found but we want to test whatever is there
         if not hypo_files:
-            hypo_files = list(HYPOTHESIS_DIR.glob("*.json"))
+            raise SystemExit(
+                "No matrix_batch_*.json or orchestrator_batch.json found in "
+                f"{HYPOTHESIS_DIR}. Run agents/local_hypothesis_generator.py first."
+            )
 
         all_hypotheses = []
         for hf in hypo_files:

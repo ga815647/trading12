@@ -32,7 +32,6 @@ def get_strategy_hash(hypothesis: dict[str, Any]) -> str:
     # Sort keys to ensure consistent hashing
     param_str = json.dumps(params, sort_keys=True)
     combined = f"{structural_id}|{param_str}"
-    print(f"DEBUG Hash: {structural_id} + {param_str}")
     return hashlib.sha256(combined.encode()).hexdigest()
 
 def load_lifecycle() -> dict[str, dict[str, Any]]:

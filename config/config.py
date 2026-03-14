@@ -11,11 +11,18 @@ load_dotenv()
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
-# Time decay (validator)
-TIME_DECAY_LAMBDA = 1.0
+# Validator thresholds
+MIN_SAMPLE_COUNT = 200
+MIN_WIN_RATE = 0.55
+MIN_OOS_WIN_RATE = 0.53
+MIN_SHARPE = 0.5  # Portfolio-level Sharpe (typically lower than trade-level)
+MAX_ADJUSTED_P_VALUE = 0.05
+OOS_YEARS = 2  # Time-based Out-Of-Sample period in years
+MIN_CYCLE_SAMPLES = 30
 MIN_WEIGHTED_WIN_RATE = 0.51
 MIN_RECENT_2Y_WIN_RATE = 0.50
 MIN_RECENT_2Y_TRADES = 10
+TIME_DECAY_LAMBDA = 1.0
 
 # Edge defense (liquidity). FinMind Volume = shares. 1 lot = 1000 shares.
 SHARES_PER_LOT = 1000

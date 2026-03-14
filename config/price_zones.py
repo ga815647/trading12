@@ -142,14 +142,12 @@ class PriceZoneFramework:
             區間名稱序列
         """
         if not rolling:
-            # 靜態區間（使用全部歷史資料）
-            if method == "percentile":
-                zones = self.calculate_zones_percentile(price_series)
-            else:
-                current_price = price_series.iloc[-1]
-                zones = self.calculate_zones_relative(price_series, current_price)
-
-            return price_series.apply(lambda p: self.get_price_zone(p, zones))
+            raise RuntimeError(
+                "Static (non-rolling) zone calculation uses full-series percentiles "
+                "and introduces look-ahead bias. Always use rolling=True in backtests. "
+                "If you need a static zone for display purposes only, call "
+                "calculate_zones_percentile() directly and handle the bias yourself."
+            )
 
         # 滾動區間計算
         zone_series = pd.Series(index=price_series.index, dtype=str)
@@ -173,11 +171,10 @@ class PriceZoneFramework:
         return zone_series
 
 
-def get_price_zone_filter(
-    price_series: pd.Series,
     target_zones: List[str],
     lookback_years: int = 3,
-    method: str = "percentile"
+    method: str = "percentile",
+    rolling: bool = True
 ) -> pd.Series:
     """
     產生價格區間過濾器
@@ -187,12 +184,17 @@ def get_price_zone_filter(
         target_zones: 目標區間列表 ["破壞價", "便宜區", "合理區", "昂貴區", "盤子價"]
         lookback_years: 回顧期間
         method: 計算方法
+        rolling: 是否使用滾動計算 (預設為 True 以避免未來資訊洩漏)
 
     Returns:
         布林序列，True表示價格在目標區間內
     """
+    # 強制 rolling=True，防止未來洩漏
+    if not rolling:  # 若呼叫方傳入 rolling=False
+        raise RuntimeError("get_price_zone_filter() must use rolling=True to avoid look-ahead bias.")
+        
     framework = PriceZoneFramework(lookback_years, method)
-    zone_series = framework.calculate_zone_series(price_series, method, rolling=True)
+    zone_series = framework.calculate_zone_series(price_series, method, rolling=rolling)
 
     return zone_series.isin(target_zones)
 

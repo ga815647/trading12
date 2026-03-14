@@ -38,6 +38,25 @@ def generate_local_factory(max_count: int = 1000):
         "M01": {"divergence_threshold": [0.5, 0.7, 0.9]},  # 外資買 + 投信追
         "M02": {"divergence_threshold": [0.5, 0.7, 0.9]},  # 外資買 + 融資退
         "M03": {"divergence_threshold": [0.5, 0.7, 0.9]},  # 法人合買 + 融資退
+        # --- Expanded Triggers ---
+        "A02": {"threshold_a": [100, 300, 800, 2000], "consecutive_n": [2, 3, 5]},
+        "A05": {"threshold_a": [100, 300, 800], "consecutive_n": [2, 3, 5]},
+        "B05": {"bar_body_pct": [0.02, 0.03, 0.05, 0.07], "consecutive_n": [3, 5, 8]},
+        "E01": {"indicator_val": [20, 25, 30, 35]},
+        "E02": {"indicator_val": [20, 25, 30, 35]},
+        "E03": {"bar_body_pct": [0.05, 0.08, 0.12], "consecutive_n": [5, 10, 15]},
+        "G01": {"bar_body_pct": [0.02, 0.03, 0.05]},
+        "G03": {"bar_body_pct": [0.03, 0.05, 0.07]},
+        "G04": {"bar_body_pct": [0.02, 0.03, 0.05]},
+        "H01": {"bar_body_pct": [0.02, 0.03, 0.05], "consecutive_n": [3, 5, 10]},
+        "H04": {"threshold_a": [100, 300, 800], "consecutive_n": [3, 5, 10]},
+        "H05": {"threshold_a": [100, 300, 800], "consecutive_n": [3, 5, 10]},
+        "J01": {"indicator_val": [60, 70, 80]},
+        "J04": {"bar_body_pct": [0.05, 0.08, 0.12], "consecutive_n": [3, 5, 10]},
+        "K04": {"threshold_a": [100, 500, 2000], "pattern_name": ["buy_3", "buy_5"]},
+        "K05": {"threshold_a": [100, 500, 2000], "indicator_val": [20, 30]},
+        "M04": {"divergence_threshold": [0.5, 0.7, 0.9]},
+        "M05": {"divergence_threshold": [0.5, 0.7, 0.9]},
     }
 
     # State Filters (The 'Where/When')
