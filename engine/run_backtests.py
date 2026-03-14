@@ -108,27 +108,36 @@ def run_many(
     
     completed = 0
     try:
+        # Use a generator expression with a list cast to avoid iterating over a moving target
+        # or being blocked by as_completed internal locks during shutdown
         for future in as_completed(futures):
+            # Check shutdown BEFORE processing each result
             if is_shutdown and is_shutdown():
                 executor.shutdown(wait=False, cancel_futures=True)
-                # On shutdown, we break early and let the caller handle process exit
                 break
             
-            index = futures[future]
-            results[index] = future.result()
-            completed += 1
-            if progress:
-                progress.update(1)
-                progress.set_postfix_str(f"done {completed}/{len(hypotheses)}")
+            try:
+                index = futures[future]
+                results[index] = future.result()
+                completed += 1
+                if progress:
+                    progress.update(1)
+                    progress.set_postfix_str(f"done {completed}/{len(hypotheses)}")
+            except Exception as e:
+                # If a single task fails, we log and continue unless it's a shutdown
+                if is_shutdown and is_shutdown():
+                    break
+                print(f"\nTask failed: {e}")
+                
     except Exception as e:
         executor.shutdown(wait=False, cancel_futures=True)
         raise e
     finally:
         if progress:
             progress.close()
-        # Only do a wait=True shutdown if we are NOT in a shutdown request
-        if not (is_shutdown and is_shutdown()):
-            executor.shutdown(wait=True)
+        # Non-blocking shutdown if SHUTDOWN_REQUESTED
+        shutdown_wait = not (is_shutdown and is_shutdown())
+        executor.shutdown(wait=shutdown_wait, cancel_futures=not shutdown_wait)
 
     return [result for result in results if result is not None]
 

@@ -36,8 +36,16 @@ def shutdown_handler(signum, frame):
 
 def check_shutdown():
     if SHUTDOWN_REQUESTED:
-        logger.info("[System] 🔚 程序已安全終止。")
-        os._exit(0)  # Use os._exit to bypass any lingering worker cleanup hangs
+        # Using sys.stderr directly to ensure immediate visibility during hang debugging
+        sys.stderr.write("\n[System] 🔚 程序已執行安全終止流程。\n")
+        sys.stderr.flush()
+        # More aggressive kill of descendant processes if not cleanly closed
+        if sys.platform != "win32":
+            try:
+                os.killpg(os.getpgrp(), signal.SIGKILL)
+            except:
+                pass
+        os._exit(0)
 
 # Register signal handler
 signal.signal(signal.SIGINT, shutdown_handler)
@@ -174,7 +182,7 @@ def main():
         if not skip_fetch_reason:
             run_step("Data Fetch", [sys.executable, "data/fetcher.py", "--mode", "daily"])
         else:
-            logger.info(f"🛡️ [Pre-Fetch Guard] Skipping fetch: {skip_fetch_reason}")
+            logger.info(f"[Guard] [Pre-Fetch Guard] Skipping fetch: {skip_fetch_reason}")
 
         # Post-Fetch Final Guard
         date_after = get_latest_market_date()
@@ -182,7 +190,7 @@ def main():
 
         has_new_data = True
         if not args.force and date_before == date_after and date_after is not None:
-            logger.info("🛡️ [State Guard] No data change detected. Skipping fetch but continuing mining.")
+            logger.info("[Guard] [State Guard] No data change detected. Skipping fetch but continuing mining.")
             has_new_data = False
 
         # 2. Generation & Lifecycle Filtering
@@ -278,7 +286,7 @@ def main():
         # 6. Smart Scan Guard
         if SHUTDOWN_REQUESTED: check_shutdown()
         if not has_new_data and new_active_count == 0:
-            logger.info("🛡️ [Smart Scan Guard] No new data and no new strategies found. Skipping scan.")
+            logger.info("[Guard] [Smart Scan Guard] No new data and no new strategies found. Skipping scan.")
             print("\n🛡️ 今日無新資料且未發現新策略，跳過掃描與推播以防洗版。")
             return
 
