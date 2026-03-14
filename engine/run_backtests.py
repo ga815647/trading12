@@ -89,42 +89,46 @@ def run_many(
 
     # Multiprocessing
     results: list[dict | None] = [None] * len(hypotheses)
-    with ProcessPoolExecutor(max_workers=workers, initializer=_init_worker) as executor:
-        futures = {
-            executor.submit(_run_single_worker, hypothesis): index
-            for index, hypothesis in enumerate(hypotheses)
-        }
+    executor = ProcessPoolExecutor(max_workers=workers, initializer=_init_worker)
+    
+    progress = None
+    if show_progress:
+        progress = tqdm(
+            total=len(hypotheses),
+            desc=progress_desc,
+            dynamic_ncols=True,
+            unit="hyp",
+            file=sys.stdout,
+        )
         
-        progress = None
-        if show_progress:
-            progress = tqdm(
-                total=len(hypotheses),
-                desc=progress_desc,
-                dynamic_ncols=True,
-                unit="hyp",
-                file=sys.stdout,
-            )
+    futures = {
+        executor.submit(_run_single_worker, hypothesis): index
+        for index, hypothesis in enumerate(hypotheses)
+    }
+    
+    completed = 0
+    try:
+        for future in as_completed(futures):
+            if is_shutdown and is_shutdown():
+                executor.shutdown(wait=False, cancel_futures=True)
+                # On shutdown, we break early and let the caller handle process exit
+                break
             
-        completed = 0
-        try:
-            for future in as_completed(futures):
-                if is_shutdown and is_shutdown():
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    break
-                
-                index = futures[future]
-                results[index] = future.result()
-                completed += 1
-                if progress:
-                    progress.update(1)
-                    progress.set_postfix_str(f"done {completed}/{len(hypotheses)}")
-        except Exception as e:
+            index = futures[future]
+            results[index] = future.result()
+            completed += 1
             if progress:
-                progress.close()
-            raise e
-        finally:
-            if progress:
-                progress.close()
+                progress.update(1)
+                progress.set_postfix_str(f"done {completed}/{len(hypotheses)}")
+    except Exception as e:
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise e
+    finally:
+        if progress:
+            progress.close()
+        # Only do a wait=True shutdown if we are NOT in a shutdown request
+        if not (is_shutdown and is_shutdown()):
+            executor.shutdown(wait=True)
 
     return [result for result in results if result is not None]
 

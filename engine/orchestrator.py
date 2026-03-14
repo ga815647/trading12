@@ -20,14 +20,24 @@ import pyarrow.parquet as pq
 
 # Global shutdown flag
 SHUTDOWN_REQUESTED = False
+MAIN_PID = os.getpid()
 
 def shutdown_handler(signum, frame):
     global SHUTDOWN_REQUESTED
+    # Only the main process should handle this to avoid log spam and redundant cleanup
+    if os.getpid() != MAIN_PID:
+        return
+        
     if not SHUTDOWN_REQUESTED:
         SHUTDOWN_REQUESTED = True
         logger.info("\n[System] 🛑 收到中斷指令，正在安全停止所有平行任務並清理程序...")
     else:
         logger.warning("[System] ⚠️ 已在執行中斷流程，請勿重複操作。")
+
+def check_shutdown():
+    if SHUTDOWN_REQUESTED:
+        logger.info("[System] 🔚 程序已安全終止。")
+        os._exit(0)  # Use os._exit to bypass any lingering worker cleanup hangs
 
 # Register signal handler
 signal.signal(signal.SIGINT, shutdown_handler)
@@ -245,7 +255,7 @@ def main():
             ])
 
             if SHUTDOWN_REQUESTED:
-                return
+                check_shutdown()
 
             # 5. Update Lifecycle
             from config.encrypt import load_encrypted_json
@@ -263,21 +273,21 @@ def main():
             logger.info(f"Lifecycle registry updated. New active strategies found: {new_active_count}")
 
             if SHUTDOWN_REQUESTED:
-                return
+                check_shutdown()
 
         # 6. Smart Scan Guard
-        if SHUTDOWN_REQUESTED: return
+        if SHUTDOWN_REQUESTED: check_shutdown()
         if not has_new_data and new_active_count == 0:
             logger.info("🛡️ [Smart Scan Guard] No new data and no new strategies found. Skipping scan.")
             print("\n🛡️ 今日無新資料且未發現新策略，跳過掃描與推播以防洗版。")
             return
 
         # 7. Daily Scan
-        if SHUTDOWN_REQUESTED: return
+        if SHUTDOWN_REQUESTED: check_shutdown()
         scan_output = run_step("Daily Scan", [sys.executable, "engine/run_daily_scan.py"])
         
         # 8. Reporting
-        if SHUTDOWN_REQUESTED: return
+        if SHUTDOWN_REQUESTED: check_shutdown()
         end_time = datetime.now()
         duration = end_time - start_time
         summary_msg = (
