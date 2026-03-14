@@ -121,10 +121,10 @@ def main():
         date_after = get_latest_market_date()
         logger.info(f"Market Date After Fetch/Check: {date_after}")
 
+        has_new_data = True
         if not args.force and date_before == date_after and date_after is not None:
-            logger.info("🛡️ [State Guard] No data change detected. Aborting scan.")
-            print(f"\n🛡️ 今日無新交易資料 ({date_after})，安全守衛攔截。")
-            return
+            logger.info("🛡️ [State Guard] No data change detected. Skipping fetch but continuing mining.")
+            has_new_data = False
 
         # 2. Generation & Lifecycle Filtering
         logger.info(">>> Segment: Generation & Lifecycle Filter")
@@ -148,6 +148,7 @@ def main():
         to_test = filter_and_thaw(all_hypotheses, current_bars)
         logger.info(f"Filtered {len(all_hypotheses)} down to {len(to_test)} for testing.")
 
+        new_active_count = 0
         if not to_test:
             logger.info("No new or thawed strategies to test. Proceeding to scan.")
         else:
@@ -185,18 +186,28 @@ def main():
                 res["passes_validation"] = res.get("hypothesis_id") in valid_ids
             
             update_lifecycle(backtest_results, current_bars)
-            logger.info("Lifecycle registry updated.")
+            
+            # Count how many of the JUST TESTED strategies are now active
+            new_active_count = len([vid for vid in valid_ids if vid in {t.get("hypothesis_id") for t in to_test}])
+            logger.info(f"Lifecycle registry updated. New active strategies found: {new_active_count}")
 
-        # 6. Daily Scan
+        # 6. Smart Scan Guard
+        if not has_new_data and new_active_count == 0:
+            logger.info("🛡️ [Smart Scan Guard] No new data and no new strategies found. Skipping scan.")
+            print("\n🛡️ 今日無新資料且未發現新策略，跳過掃描與推播以防洗版。")
+            return
+
+        # 7. Daily Scan
         scan_output = run_step("Daily Scan", [sys.executable, "engine/run_daily_scan.py"])
         
-        # 7. Reporting
+        # 8. Reporting
         end_time = datetime.now()
         duration = end_time - start_time
         summary_msg = (
             f"✅ **Orchestrator Run Complete**\n"
             f"• 耗時：{str(duration).split('.')[0]}\n"
             f"• 測試策略數：{len(to_test)}\n"
+            f"• 新增有效策略：{new_active_count}\n"
             f"• 目前 K 線長度：{current_bars}\n"
             f"• 掃描狀態：完成\n"
             f"更多細節請查看 logs/orchestrator.log"
