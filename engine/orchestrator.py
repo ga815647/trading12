@@ -246,7 +246,7 @@ def main():
             logger.info(f"Step Backtest completed. {len(backtest_results)} results saved.")
 
             if SHUTDOWN_REQUESTED:
-                return
+                check_shutdown()
 
             # 4. Validate
             run_step("Validate", [
