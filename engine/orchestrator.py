@@ -36,8 +36,13 @@ def shutdown_handler(signum, frame):
 
 def check_shutdown():
     if SHUTDOWN_REQUESTED:
-        # Avoid any locks or buffering by using print with flush
-        print("\n[System] 🔚 程序已執行安全終止流程。", flush=True)
+        print("\n[System] 🔚 程序已執行安全終止流程 (Nuclear Cleanup)。", flush=True)
+        if sys.platform != "win32":
+            # Kill the entire process group to ensure no orphans remain
+            try:
+                os.killpg(0, signal.SIGKILL)
+            except:
+                pass
         os._exit(0)
 
 # Register signal handler
@@ -140,6 +145,11 @@ def run_step(name: str, cmd: list[str], cwd: Path = ROOT_DIR):
         raise
 
 def main():
+    if sys.platform != "win32":
+        try:
+            os.setpgrp()
+        except:
+            pass
     parser = argparse.ArgumentParser(description="Master Pipeline Orchestrator")
     parser.add_argument("--mode", choices=["local", "llm"], default="local")
     parser.add_argument("--skip-fetch", action="store_true", help="Skip data fetching")

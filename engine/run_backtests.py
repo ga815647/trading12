@@ -136,20 +136,9 @@ def run_many(
         if progress:
             progress.close()
         # Non-blocking shutdown if SHUTDOWN_REQUESTED
+        # The orchestrator will handle the nuclear SIGKILL to children
         is_hard_shutdown = is_shutdown and is_shutdown()
-        if is_hard_shutdown:
-            # Forcefully kill worker processes to avoid hang during executor.shutdown
-            try:
-                for pid in list(executor._processes.keys()):
-                    try:
-                        os.kill(pid, signal.SIGKILL)
-                    except:
-                        pass
-            except:
-                pass
-            executor.shutdown(wait=False, cancel_futures=True)
-        else:
-            executor.shutdown(wait=True)
+        executor.shutdown(wait=not is_hard_shutdown, cancel_futures=is_hard_shutdown)
 
     return [result for result in results if result is not None]
 
