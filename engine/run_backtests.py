@@ -135,10 +135,14 @@ def run_many(
     finally:
         if progress:
             progress.close()
-        # Non-blocking shutdown if SHUTDOWN_REQUESTED
-        # The orchestrator will handle the nuclear SIGKILL to children
+        
         is_hard_shutdown = is_shutdown and is_shutdown()
-        executor.shutdown(wait=not is_hard_shutdown, cancel_futures=is_hard_shutdown)
+        if is_hard_shutdown:
+            # Atomic exit: Don't call executor.shutdown() which can hang in some environments.
+            # Orchestrator will handle the nuclear SIGKILL.
+            return [result for result in results if result is not None]
+        
+        executor.shutdown(wait=True)
 
     return [result for result in results if result is not None]
 

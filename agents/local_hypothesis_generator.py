@@ -91,6 +91,8 @@ def generate_local_factory(max_count: int = 1000):
     # Cleanup old local batches to prevent confusion
     for old_file in HYPOTHESIS_DIR.glob("local_batch_*.json"):
         old_file.unlink()
+    for old_file in HYPOTHESIS_DIR.glob("matrix_batch_*.json"):
+        old_file.unlink()
 
     # Batch saving (500 per file)
     batch_size = 500
