@@ -208,6 +208,35 @@ def calculate_tva_state(
     return states
 
 
+def calculate_price_zone(
+    price_series: pd.Series,
+    window: int = 250
+) -> pd.Series:
+    """
+    四/五區間價格框架 (Five-Zone Price Framework)
+    回傳 0-4 的狀態代碼:
+    0: 破壞價 (0.0 - 0.1) - breakdown zone
+    1: 便宜區 (0.1 - 0.3) - cheap zone
+    2: 合理區 (0.3 - 0.7) - fair zone
+    3: 昂貴區 (0.7 - 0.9) - expensive zone
+    4: 盤子價 (0.9 - 1.0) - bubble zone
+    """
+    rolling_min = price_series.rolling(window).min()
+    rolling_max = price_series.rolling(window).max()
+    
+    # Calculate relative position (0 to 1)
+    position = (price_series - rolling_min) / (rolling_max - rolling_min).replace(0, np.nan)
+    
+    zones = pd.Series(-1, index=price_series.index)
+    zones[position <= 0.1] = 0
+    zones[(position > 0.1) & (position <= 0.3)] = 1
+    zones[(position > 0.3) & (position <= 0.7)] = 2
+    zones[(position > 0.7) & (position <= 0.9)] = 3
+    zones[position > 0.9] = 4
+    
+    return zones
+
+
 def detect_group_sequence(
     leader_series: pd.Series,
     follower_series: pd.Series,
@@ -405,6 +434,15 @@ def build_signal_series(stock_id: str, frame: pd.DataFrame, hypothesis: dict[str
             signal = signal & (current_states == state_filter)
         else:
             signal = signal & (current_states.isin(state_filter))
+
+    # 4. Post-Filter (Price Zone)
+    price_zone = params.get("price_zone")
+    if price_zone is not None and isinstance(price_zone, (int, list)):
+        current_zones = calculate_price_zone(df["Close"])
+        if isinstance(price_zone, int):
+            signal = signal & (current_zones == price_zone)
+        else:
+            signal = signal & (current_zones.isin(price_zone))
 
     return signal.fillna(False).astype(bool)
 

@@ -37,7 +37,12 @@ def generate_local_factory(max_count: int = 1000):
         "FLT_VOL_SHRINK": {},                    # 量縮洗盤 (Prev Vol < 0.8 * 5MA Vol)
         "FLT_KD_OVERSOLD": {},                   # KD 落底 (K < 30 & D < 30)
         "TVA1": {"state_filter": [1]},           # Up-Trend, Accelerating
-        "TVA5": {"state_filter": [5]}            # Down-Trend, Accelerating Up
+        "TVA5": {"state_filter": [5]},           # Down-Trend, Accelerating Up
+        "PZ_BREAKDOWN": {"price_zone": [0]},     # 破壞價 (Price relative position <= 0.1)
+        "PZ_CHEAP": {"price_zone": [1]},         # 便宜區 (0.1 - 0.3)
+        "PZ_FAIR": {"price_zone": [2]},          # 合理區 (0.3 - 0.7)
+        "PZ_EXPENSIVE": {"price_zone": [3]},     # 昂貴區 (0.7 - 0.9)
+        "PZ_BUBBLE": {"price_zone": [4]}         # 盤子價 (Price relative position > 0.9)
     }
 
     common_params = {
