@@ -49,13 +49,12 @@ def run_step(name: str, cmd: list[str], cwd: Path = ROOT_DIR):
     logger.info(f">>> Starting Step: {name}")
     logger.info(f"Command: {' '.join(cmd)}")
     try:
-        result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=True)
+        # Don't use capture_output=True, allow it to stream to the main terminal
+        result = subprocess.run(cmd, cwd=cwd, check=True)
         logger.info(f"Step {name} completed successfully.")
-        return result.stdout
+        return ""
     except subprocess.CalledProcessError as e:
         logger.error(f"Step {name} failed with exit code {e.returncode}")
-        logger.error(f"Stdout: {e.stdout}")
-        logger.error(f"Stderr: {e.stderr}")
         raise
 
 def main():
