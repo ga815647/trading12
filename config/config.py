@@ -34,9 +34,26 @@ LOG_DIR = ROOT_DIR / "logs"
 @dataclass(frozen=True)
 class Settings:
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     encrypt_password: str = os.getenv("ENCRYPT_PASSWORD", "")
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    telegram_chat_id: str = os.getenv("TELEGRAM_CHAT_ID", "")
+    
+    # Support multiple chat IDs separated by commas
+    _telegram_chat_id_raw: str = os.getenv("TELEGRAM_CHAT_ID", "")
+    
+    @property
+    def telegram_chat_ids(self) -> list[str]:
+        if not self._telegram_chat_id_raw:
+            return []
+        return [id.strip() for id in self._telegram_chat_id_raw.split(",") if id.strip()]
+
+    # Maintain backward compatibility for single ID access if needed
+    @property
+    def telegram_chat_id(self) -> str:
+        ids = self.telegram_chat_ids
+        return ids[0] if ids else ""
+
     finmind_token: str = os.getenv("FINMIND_TOKEN", "")
 
 
