@@ -72,7 +72,14 @@ def cloud_llm(prompt: str, model: str | None = None) -> str:
         elif provider == "gemini":
             import google.generativeai as genai
             genai.configure(api_key=SETTINGS.gemini_api_key)
-            model_instance = genai.GenerativeModel(model_name=model, system_instruction=SAFETY_PROMPT)
+            
+            # Use gemini-1.5-flash as a more likely available default for free tier
+            actual_model = model if model else "gemini-1.5-flash"
+            # Some environments require 'models/' prefix
+            if "gemini" in actual_model and not actual_model.startswith("models/"):
+                actual_model = f"models/{actual_model}"
+                
+            model_instance = genai.GenerativeModel(model_name=actual_model, system_instruction=SAFETY_PROMPT)
             response = model_instance.generate_content(prompt)
             return response.text
 
