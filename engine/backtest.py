@@ -97,6 +97,7 @@ def _enrich(frame: pd.DataFrame) -> pd.DataFrame:
     df["close_return"] = df["Close"].pct_change()
     df["n_return_5"] = df["Close"].pct_change(5)
     df["n_return_10"] = df["Close"].pct_change(10)
+    df["volume_lots"] = df["Volume"] / SHARES_PER_LOT
     df["volume_ma_5"] = df["Volume"].rolling(5).mean()
     df["volume_ma_20"] = df["Volume"].rolling(20).mean()
     df["price_ma_20"] = df["Close"].rolling(20).mean()
@@ -528,8 +529,8 @@ def backtest_stock(
             idx += 1
             continue
         if EDGE_DEFENSE_ENABLED:
-            vol = float(frame["Volume"].iloc[entry_idx])
-            if not filter_by_liquidity(vol, MIN_DAILY_VOLUME_LOTS, SHARES_PER_LOT):
+            vol_lots = float(frame["volume_lots"].iloc[entry_idx])
+            if vol_lots < MIN_DAILY_VOLUME_LOTS:
                 idx += 1
                 continue
         exit_close = float(frame["Close"].iloc[exit_idx])

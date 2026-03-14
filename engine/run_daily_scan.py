@@ -108,6 +108,15 @@ def run_daily_scan(signal_library: list[dict], symbols: list[str] | None = None)
         for stock_id in target_universe:
             trigger = evaluate_latest_signal(stock_id, hypothesis, market_cache=market_cache)
             if trigger:
+                # 增強 PnL 回報 (針對賣出管線)
+                if direction == "exit":
+                    pos = next((h for h in detailed_holdings if h["symbol"] == stock_id), None)
+                    if pos:
+                        entry_price = pos["entry_price"]
+                        current_price = trigger["close"]
+                        pnl = (current_price - entry_price) / entry_price if entry_price > 0 else 0.0
+                        trigger["entry_price"] = entry_price
+                        trigger["pnl_ext"] = pnl
                 triggered[direction].append(trigger)
     
     # 對各管線進行訊號投票

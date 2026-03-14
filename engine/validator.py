@@ -23,6 +23,7 @@ from config.encrypt import load_encrypted_json, save_signal
 from config.market_cycle import label_date
 from engine.portfolio import select_signal_library
 from engine.time_decay import (
+    _parse_date,
     compute_recent_stats,
     compute_weighted_win_rate,
 )
@@ -96,15 +97,35 @@ def validate_backtests(
 
     p_values = [float(item.get("p_value", 1.0)) for item in backtests]
     adjusted = _adjust_p_values(p_values) if p_values else []
+
+    # Find global anchor date for the batch
+    all_trade_dates = []
+    for item in backtests:
+        all_trade_dates.extend(item.get("trade_dates", []))
+    
+    from datetime import datetime
+    global_anchor: datetime | None = None
+    if all_trade_dates:
+        global_anchor = max(_parse_date(d) for d in all_trade_dates)
+
     validated: list[dict[str, Any]] = []
 
-    for item, adjusted_p in zip(backtests, adjusted):
         trade_dates = item.get("trade_dates", [])
         trade_returns = item.get("trade_returns", [])
+        
         weighted_wr, _ = compute_weighted_win_rate(
-            trade_dates, trade_returns, decay_lambda=_lambda
+            trade_dates, trade_returns, decay_lambda=_lambda, anchor=global_anchor
         )
-        recent_wr, recent_count = compute_recent_stats(trade_dates, trade_returns)
+        recent_wr, recent_count = compute_recent_stats(
+            trade_dates, trade_returns, anchor=global_anchor
+        )
+
+        # Small Sample Size Defense: Bayesian Smoothing towards 0.5
+        # smoothed = (wins + prior_wins) / (total + prior_total)
+        # where prior_total = _min_recent_n and prior_wins = _min_recent_n * 0.5
+        if recent_count < _min_recent_n and recent_wr is not None:
+            wins = recent_wr * recent_count
+            recent_wr = (wins + (_min_recent_n * 0.5)) / (recent_count + _min_recent_n)
 
         recent_pass = recent_count >= _min_recent_n and (
             recent_wr is not None and recent_wr >= _min_recent_wr
@@ -132,6 +153,26 @@ def validate_backtests(
         )
         if candidate["passes_validation"]:
             validated.append(candidate)
+    
+    # Generate evolution hints
+    hints = {
+        "survivor_count": len(validated),
+        "mutation_intensity": "normal" if len(validated) > 0 else "high",
+        "top_themes": []
+    }
+    if validated:
+        themes = {}
+        for v in validated:
+            tid = str(v.get("id", ""))[:1]
+            themes[tid] = themes.get(tid, 0) + 1
+        hints["top_themes"] = sorted(themes.keys(), key=lambda x: themes[x], reverse=True)
+    
+    # Save hints for Agent 1 (as a plain JSON for easy reading)
+    import json
+    hint_path = SIGNAL_DIR / "evolution_hints.json"
+    with open(hint_path, "w", encoding="utf-8") as f:
+        json.dump(hints, f, indent=2)
+
     return select_signal_library(validated)
 
 

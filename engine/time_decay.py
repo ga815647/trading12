@@ -42,6 +42,7 @@ def compute_weighted_win_rate(
     trade_dates: list[str],
     trade_returns: list[float],
     decay_lambda: float = DEFAULT_LAMBDA,
+    anchor: datetime | None = None,
 ) -> tuple[float, int]:
     """
     Weighted win rate. Anchor = max(trade_dates).
@@ -50,9 +51,10 @@ def compute_weighted_win_rate(
     if not trade_dates or not trade_returns or len(trade_dates) != len(trade_returns):
         return 0.0, 0
 
-    anchor = anchor_date(trade_dates)
     if anchor is None:
-        return 0.0, 0
+        anchor = anchor_date(trade_dates)
+        if anchor is None:
+            return 0.0, 0
 
     weighted_wins = 0.0
     total_weight = 0.0
@@ -72,6 +74,7 @@ def compute_recent_stats(
     trade_dates: list[str],
     trade_returns: list[float],
     recent_days: int = RECENT_2Y_DAYS,
+    anchor: datetime | None = None,
 ) -> tuple[float | None, int]:
     """
     Recent N days stats. Anchor = max(trade_dates).
@@ -80,9 +83,10 @@ def compute_recent_stats(
     if not trade_dates or not trade_returns or len(trade_dates) != len(trade_returns):
         return None, 0
 
-    anchor = anchor_date(trade_dates)
     if anchor is None:
-        return None, 0
+        anchor = anchor_date(trade_dates)
+        if anchor is None:
+            return None, 0
 
     recent_returns: list[float] = []
     for dt_str, ret in zip(trade_dates, trade_returns):
