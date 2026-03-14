@@ -28,7 +28,7 @@ def generate_local_factory(max_count: int = 3000):
         # --- J 類：情緒 (Sentiment) ---
         "J06": {"threshold_a": [300, 800, 2000], "indicator_val": [20, 30, 50]},
         # --- K 類：籌碼序列 (Chip Sequences) ---
-        "K01": {"threshold_a": [100, 500, 2000], "pattern_name": ["buy_3", "buy_5", "buy_7"]},
+        "K01": {"threshold_a": [100, 500, 2000], "pattern_name": ["buy_3", "buy_5", "accelerate_buy"]},
         "K02": {"threshold_a": [100, 500, 2000], "pattern_name": ["buy_3", "buy_5"]},
         "K03": {"threshold_a": [100, 500, 2000], "pattern_name": ["buy_3", "buy_5"]},
         # --- L 類：跨資料源複合序列 (Multi-Source Sequences) ---

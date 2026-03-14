@@ -35,7 +35,13 @@ GROUP_INDEPENDENCE_CLUSTERS = {
 
 
 def classify_group(hypothesis_id: str) -> str:
-    return GROUP_MAP.get(str(hypothesis_id)[:1], "other")
+    h_id = str(hypothesis_id)
+    if h_id.startswith("LM_"):
+        parts = h_id.split("_")
+        # LM_E03_PZ_BREAKDOWN_0433 → trigger = "E03" → key = "E"
+        trigger = parts[1] if len(parts) >= 2 else ""
+        return GROUP_MAP.get(trigger[:1], "other")
+    return GROUP_MAP.get(h_id[:1], "other")
 
 
 def build_signal_id(item: dict[str, Any]) -> str:

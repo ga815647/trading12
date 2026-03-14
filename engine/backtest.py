@@ -249,15 +249,29 @@ def detect_group_sequence(
     follower_series: pd.Series,
     leader_days: int = 3,
     follower_window: int = 5,
-    divergence_threshold: float = 0.7
+    divergence_threshold: float = 0.7,
 ) -> pd.Series:
-    leader_mean = leader_series.rolling(leader_days).mean()
+    """
+    偵測領先序列帶動跟隨序列的群體行為。
+    使用 z-score 正規化後比較，避免單位不一致的問題（如張數 vs 比例）。
+    divergence_threshold 代表標準差的倍數。
+    """
+    # Z-score 正規化（用 60 日滾動統計）
+    def zscore(s: pd.Series, window: int = 60) -> pd.Series:
+        mu = s.rolling(window, min_periods=10).mean()
+        sigma = s.rolling(window, min_periods=10).std()
+        return (s - mu) / sigma.replace(0, np.nan)
+
+    leader_z = zscore(leader_series)
+    follower_z = zscore(follower_series)
+
+    leader_mean = leader_z.rolling(leader_days).mean()
     leader_direction = leader_mean.shift(follower_window)
-    follower_avg = follower_series.rolling(follower_window).mean()
-    
+    follower_avg = follower_z.rolling(follower_window).mean()
+
     valid_leader = leader_direction.abs() >= divergence_threshold
     triggered = valid_leader & (follower_avg.abs() > divergence_threshold)
-    
+
     return triggered.fillna(False).astype(bool)
 
 
@@ -461,6 +475,10 @@ def build_signal_series(stock_id: str, frame: pd.DataFrame, hypothesis: dict[str
 
 def infer_direction(hypothesis: dict[str, Any]) -> str:
     template_id = str(hypothesis.get("id", ""))
+    # 解析 LM_ 前綴取得真正的 trigger ID
+    if template_id.startswith("LM_"):
+        parts = template_id.split("_")
+        template_id = parts[1] if len(parts) >= 2 else template_id
     if template_id in {"G03"}:
         return "exit"
     if template_id in {"J01", "J02", "J03", "L02"}:
