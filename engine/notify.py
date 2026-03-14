@@ -15,15 +15,22 @@ from config.config import SETTINGS
 
 def send_signal(message: str) -> bool:
     if not SETTINGS.telegram_bot_token or not SETTINGS.telegram_chat_id:
+        print(f"Skipping notification: Token={bool(SETTINGS.telegram_bot_token)}, ChatID={bool(SETTINGS.telegram_chat_id)}")
         return False
+        
     url = f"https://api.telegram.org/bot{SETTINGS.telegram_bot_token}/sendMessage"
-    response = requests.post(
-        url,
-        json={"chat_id": SETTINGS.telegram_chat_id, "text": message},
-        timeout=15,
-    )
-    response.raise_for_status()
-    return True
+    payload = {"chat_id": SETTINGS.telegram_chat_id, "text": message}
+    
+    try:
+        response = requests.post(url, json=payload, timeout=15)
+        if response.status_code != 200:
+            print(f"Telegram Error: {response.status_code} - {response.text}")
+            print(f"Payload was: {payload}")
+        response.raise_for_status()
+        return True
+    except Exception as e:
+        print(f"Failed to send Telegram signal: {e}")
+        return False
 
 
 def build_signal_message(signal: dict[str, Any], pipeline: str = "long") -> str:
