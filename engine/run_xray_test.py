@@ -19,16 +19,38 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("xray")
 
 def find_hypothesis(hypo_id: str) -> dict | None:
-    """Search for the hypothesis in the hypothesis directory."""
+    """Search for the hypothesis in the hypothesis directory, with fallback to backtest results."""
+    # 1. Search JSON batches in results/hypotheses/
     for hf in HYPOTHESIS_DIR.glob("*.json"):
         try:
             with open(hf, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                for item in data:
+                if isinstance(data, list):
+                    for item in data:
+                        if item.get("hypothesis_id") == hypo_id:
+                            return item
+                elif isinstance(data, dict):
+                    if data.get("hypothesis_id") == hypo_id:
+                        return data
+        except:
+            continue
+            
+    # 2. Fallback: Search in encrypted backtest results (history)
+    from config.config import BACKTEST_DIR
+    from config.encrypt import load_encrypted_json
+    
+    enc_results_path = BACKTEST_DIR / "orchestrator_results.enc"
+    if enc_results_path.exists():
+        try:
+            # Requires ENCRYPT_PASSWORD in environment
+            history = load_encrypted_json(enc_results_path)
+            if isinstance(history, list):
+                for item in history:
                     if item.get("hypothesis_id") == hypo_id:
                         return item
         except:
-            continue
+            pass
+            
     return None
 
 def run_xray(symbol: str, hypo_id: str, start_date: str = None, end_date: str = None):
