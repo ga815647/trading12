@@ -7,9 +7,15 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from config.config import (
+    EDGE_DEFENSE_ENABLED,
+    MIN_DAILY_VOLUME_LOTS,
+    SHARES_PER_LOT,
+)
 from data.processor import merge_market_data
 from data.universe import UNIVERSE
 from engine.cost_model import DEFAULT_SHORT_BORROW_COST, apply_round_trip_cost
+from engine.edge_defense import filter_by_liquidity
 
 
 SEQUENCE_PATTERNS = {
@@ -349,6 +355,11 @@ def backtest_stock(
         if is_limit_up(entry_open, prev_close) or is_limit_down(entry_open, prev_close):
             idx += 1
             continue
+        if EDGE_DEFENSE_ENABLED:
+            vol = float(frame["Volume"].iloc[entry_idx])
+            if not filter_by_liquidity(vol, MIN_DAILY_VOLUME_LOTS, SHARES_PER_LOT):
+                idx += 1
+                continue
         exit_close = float(frame["Close"].iloc[exit_idx])
         if exit_close <= 0:
             idx += 1

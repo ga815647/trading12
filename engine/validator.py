@@ -10,10 +10,22 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from config.config import BACKTEST_DIR, SIGNAL_DIR, ensure_runtime_dirs
+from config.config import (
+    BACKTEST_DIR,
+    MIN_RECENT_2Y_TRADES,
+    MIN_RECENT_2Y_WIN_RATE,
+    MIN_WEIGHTED_WIN_RATE,
+    SIGNAL_DIR,
+    TIME_DECAY_LAMBDA,
+    ensure_runtime_dirs,
+)
 from config.encrypt import load_encrypted_json, save_signal
 from config.market_cycle import label_date
 from engine.portfolio import select_signal_library
+from engine.time_decay import (
+    compute_recent_stats,
+    compute_weighted_win_rate,
+)
 
 
 def _adjust_p_values(values: list[float]) -> list[float]:
@@ -72,16 +84,39 @@ def validate_backtests(
     min_oos_win_rate: float = 0.53,
     min_sharpe: float = 1.0,
     max_adjusted_p_value: float = 0.05,
+    min_weighted_win_rate: float | None = None,
+    min_recent_2y_win_rate: float | None = None,
+    min_recent_2y_trades: int | None = None,
+    time_decay_lambda: float | None = None,
 ) -> list[dict[str, Any]]:
+    _min_wr = min_weighted_win_rate if min_weighted_win_rate is not None else MIN_WEIGHTED_WIN_RATE
+    _min_recent_wr = min_recent_2y_win_rate if min_recent_2y_win_rate is not None else MIN_RECENT_2Y_WIN_RATE
+    _min_recent_n = min_recent_2y_trades if min_recent_2y_trades is not None else MIN_RECENT_2Y_TRADES
+    _lambda = time_decay_lambda if time_decay_lambda is not None else TIME_DECAY_LAMBDA
+
     p_values = [float(item.get("p_value", 1.0)) for item in backtests]
     adjusted = _adjust_p_values(p_values) if p_values else []
     validated: list[dict[str, Any]] = []
 
     for item, adjusted_p in zip(backtests, adjusted):
-        passed_cycle, cycle_counts = _cycle_pass(item.get("trade_dates", []))
+        trade_dates = item.get("trade_dates", [])
+        trade_returns = item.get("trade_returns", [])
+        weighted_wr, _ = compute_weighted_win_rate(
+            trade_dates, trade_returns, decay_lambda=_lambda
+        )
+        recent_wr, recent_count = compute_recent_stats(trade_dates, trade_returns)
+
+        recent_pass = recent_count >= _min_recent_n and (
+            recent_wr is not None and recent_wr >= _min_recent_wr
+        )
+
+        passed_cycle, cycle_counts = _cycle_pass(trade_dates)
         candidate = dict(item)
         candidate["adjusted_p_value"] = adjusted_p
         candidate["cycle_counts"] = cycle_counts
+        candidate["weighted_win_rate"] = weighted_wr
+        candidate["recent_2y_win_rate"] = recent_wr
+        candidate["recent_2y_count"] = recent_count
         candidate["passes_validation"] = all(
             [
                 candidate.get("supported", False),
@@ -91,6 +126,8 @@ def validate_backtests(
                 candidate.get("sharpe", 0.0) >= min_sharpe,
                 adjusted_p < max_adjusted_p_value,
                 passed_cycle,
+                weighted_wr >= _min_wr,
+                recent_pass,
             ]
         )
         if candidate["passes_validation"]:

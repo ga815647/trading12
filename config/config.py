@@ -10,6 +10,17 @@ load_dotenv()
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
+
+# Time decay (validator)
+TIME_DECAY_LAMBDA = 1.0
+MIN_WEIGHTED_WIN_RATE = 0.54
+MIN_RECENT_2Y_WIN_RATE = 0.52
+MIN_RECENT_2Y_TRADES = 10
+
+# Edge defense (liquidity). FinMind Volume = shares. 1 lot = 1000 shares.
+SHARES_PER_LOT = 1000
+MIN_DAILY_VOLUME_LOTS = 100
+EDGE_DEFENSE_ENABLED = True
 DATA_DIR = ROOT_DIR / "data"
 PARQUET_DIR = DATA_DIR / "parquet_db"
 RAW_DIR = DATA_DIR / "raw"
