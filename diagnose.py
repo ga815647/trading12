@@ -14,7 +14,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 try:
-    from config.encrypt import load_signals, load_encrypted_json
+    from engine.time_decay import compute_weighted_win_rate, compute_recent_stats
     from config.market_cycle import label_date
     from config.config import (
         MIN_SAMPLE_COUNT,
@@ -135,14 +135,31 @@ def diagnose_backtests():
                 passed_all = False
 
             # weighted_wr
-            if item.get("weighted_win_rate", 0.0) < MIN_WEIGHTED_WIN_RATE:
+            wwr, _ = compute_weighted_win_rate(
+                item.get("trade_dates", []),
+                item.get("trade_returns", []),
+                anchor=None
+            )
+            if wwr < MIN_WEIGHTED_WIN_RATE:
                 stats_fail[f"weighted_wr < {MIN_WEIGHTED_WIN_RATE}"] += 1
                 passed_all = False
                 
             # recent_pass
-            recent_pass = item.get("recent_2y_count", 0) >= MIN_RECENT_2Y_TRADES and \
-                          (item.get("recent_2y_win_rate") is not None and item.get("recent_2y_win_rate") >= MIN_RECENT_2Y_WIN_RATE)
-            if not recent_pass:
+            recent_wr, recent_count = compute_recent_stats(
+                item.get("trade_dates", []),
+                item.get("trade_returns", []),
+                anchor=None
+            )
+            if recent_count < MIN_RECENT_2Y_TRADES and recent_wr is not None:
+                wins = recent_wr * recent_count
+                recent_wr = (wins + (MIN_RECENT_2Y_TRADES * 0.5)) / (recent_count + MIN_RECENT_2Y_TRADES)
+            
+            recent_pass_check = (
+                recent_count >= MIN_RECENT_2Y_TRADES and
+                recent_wr is not None and
+                recent_wr >= MIN_RECENT_2Y_WIN_RATE
+            )
+            if not recent_pass_check:
                 stats_fail["recent_pass 失敗"] += 1
                 passed_all = False
             
