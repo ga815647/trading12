@@ -10,9 +10,11 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from config.config import BACKTEST_DIR, HYPOTHESIS_DIR, LOG_DIR, SIGNAL_DIR, ensure_runtime_dirs
+from config.config import BACKTEST_DIR, HYPOTHESIS_DIR, LOG_DIR, PARQUET_DIR, SIGNAL_DIR, ensure_runtime_dirs
 from engine.lifecycle import filter_and_thaw, get_current_market_bars, update_lifecycle
 from engine.notify import send_signal
+
+import pyarrow.parquet as pq
 
 # Configure logging
 ensure_runtime_dirs()
@@ -25,6 +27,23 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger("orchestrator")
+
+def get_latest_market_date() -> str | None:
+    """
+    Efficiently gets the latest date from 2330_kline.parquet using metadata/tail reading.
+    """
+    path = PARQUET_DIR / "2330_kline.parquet"
+    if not path.exists():
+        return None
+    try:
+        pf = pq.ParquetFile(path)
+        # Read only the last row group to find the last date
+        last_rg = pf.read_row_group(pf.num_row_groups - 1, columns=["date"])
+        if len(last_rg) > 0:
+            return str(last_rg["date"][-1])
+    except Exception as e:
+        logger.warning(f"Error reading market date: {e}")
+    return None
 
 def run_step(name: str, cmd: list[str], cwd: Path = ROOT_DIR):
     logger.info(f">>> Starting Step: {name}")
@@ -50,9 +69,22 @@ def main():
     logger.info(f"===== Orchestrator Pulse Start: {start_time.isoformat()} =====")
 
     try:
+        # Check date before fetch
+        date_before = get_latest_market_date()
+        logger.info(f"Market Date Before Fetch: {date_before}")
+
         # 1. Data Prep
         if not args.skip_fetch:
             run_step("Data Fetch", [sys.executable, "data/fetcher.py", "--mode", "daily"])
+
+        # Check date after fetch
+        date_after = get_latest_market_date()
+        logger.info(f"Market Date After Fetch: {date_after}")
+
+        if not args.skip_fetch and date_before == date_after and date_after is not None:
+            logger.info("🛡️ [State Guard] No new market data detected. Aborting scan to prevent alert fatigue.")
+            print("\n🛡️ 今日無新交易資料，安全守衛攔截。跳過後續掃描與推播。")
+            return
 
         # 2. Generation & Lifecycle Filtering
         logger.info(">>> Segment: Generation & Lifecycle Filter")
