@@ -251,12 +251,14 @@ def build_signal_series(stock_id: str, frame: pd.DataFrame, hypothesis: dict[str
     # Multi-Layered Matrix (LM) Support
     matrix_filter_id = "NONE"
     if template_id.startswith("LM_"):
+        # Format is LM_{TRIGGER}_{FILTER}_{INDEX}
+        # Example: LM_A01_FLT_UP_TREND_0001
         parts = template_id.split("_")
         if len(parts) >= 4:
+            # First part is LM, second is TRIGGER, last is INDEX
+            # Everything between them is the FILTER
             template_id = parts[1]
-            matrix_filter_id = parts[2]
-        else:
-            pass
+            matrix_filter_id = "_".join(parts[2:-1])
 
     def get_signal_for_template(t_id: str) -> pd.Series:
         prefix = t_id[:1]
