@@ -436,41 +436,60 @@ def backtest_stock(
     horizon_days = int(hypothesis.get("params", {}).get("horizon_days", 10))
     signal = build_signal_series(stock_id, frame, hypothesis)
     trades: list[dict[str, Any]] = []
+    
+    # Convert to NumPy for 400x faster loop access compared to .iloc
+    signal_arr = signal.to_numpy()
+    open_arr = frame["Open"].to_numpy()
+    close_arr = frame["Close"].to_numpy()
+    prev_close_arr = frame["PrevClose"].to_numpy()
+    dates = frame.index.strftime('%Y-%m-%d').to_list()
+    
+    if EDGE_DEFENSE_ENABLED:
+        vol_arr = frame["Volume"].to_numpy()
+    
     idx = 0
-    while idx < len(frame) - horizon_days - 1:
-        if not bool(signal.iloc[idx]):
+    max_idx = len(frame) - horizon_days - 1
+    
+    while idx < max_idx:
+        if not signal_arr[idx]:
             idx += 1
             continue
+            
         entry_idx = idx + 1
         exit_idx = entry_idx + horizon_days - 1
-        if exit_idx >= len(frame):
-            break
-        entry_open = float(frame["Open"].iloc[entry_idx])
-        prev_close = float(frame["PrevClose"].iloc[entry_idx])
+        
+        entry_open = float(open_arr[entry_idx])
+        prev_close = float(prev_close_arr[entry_idx])
+        
         if entry_open <= 0 or prev_close <= 0:
             idx += 1
             continue
+            
         if is_limit_up(entry_open, prev_close) or is_limit_down(entry_open, prev_close):
             idx += 1
             continue
+            
         if EDGE_DEFENSE_ENABLED:
-            vol = float(frame["Volume"].iloc[entry_idx])
-            price = float(frame["Close"].iloc[entry_idx])
+            vol = float(vol_arr[entry_idx])
+            price = float(close_arr[entry_idx])
             if not filter_by_turnover(vol, price, MIN_DAILY_TURNOVER_NTD):
                 idx += 1
                 continue
-        exit_close = float(frame["Close"].iloc[exit_idx])
+                
+        exit_close = float(close_arr[exit_idx])
         if exit_close <= 0:
             idx += 1
             continue
+            
         raw_return = _trade_return(direction, entry_open, exit_close)
         net_return = apply_round_trip_cost(raw_return)
+        
         trades.append(
             {
                 "stock_id": stock_id,
                 "direction": direction,
-                "entry_date": str(frame.index[entry_idx].date()),
-                "exit_date": str(frame.index[exit_idx].date()),
+                "entry_date": dates[entry_idx],
+                "exit_date": dates[exit_idx],
                 "entry_price": entry_open,
                 "exit_price": exit_close,
                 "holding_days": horizon_days,
@@ -480,6 +499,7 @@ def backtest_stock(
             }
         )
         idx = exit_idx + 1
+        
     return trades
 
 
