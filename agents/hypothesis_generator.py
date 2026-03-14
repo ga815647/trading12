@@ -13,6 +13,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from config.config import HYPOTHESIS_DIR, ensure_runtime_dirs
+from config.sentiment_layers import EXTENDED_J_PARAM_GRIDS
 
 
 HYPOTHESIS_TEMPLATES = [
@@ -66,6 +67,12 @@ HYPOTHESIS_TEMPLATES = [
     {"id": "J03", "desc": "Retail sentiment proxy becomes extreme."},
     {"id": "J04", "desc": "Market panic triggers mean reversion."},
     {"id": "J05", "desc": "Breadth imbalance reaches an extreme."},
+    # ── J 類擴展：情緒臨界點與群體分層（v12.2 新增）──
+    {"id": "J06", "desc": "Smart money entry zone: pre-breakout accumulation."},
+    {"id": "J07", "desc": "Smart money exit zone: pre-panic distribution."},
+    {"id": "J08", "desc": "Crowd chase zone: post-breakout momentum."},
+    {"id": "J09", "desc": "Crowd panic zone: post-breakout capitulation."},
+    {"id": "J10", "desc": "Sentiment layer transition signals."},
     {"id": "K01", "desc": "Foreign chip pattern sequence generates signal."},
     {"id": "K02", "desc": "Investment trust pattern sequence generates signal."},
     {"id": "K03", "desc": "Total institutional net buy/sell pattern sequence."},
@@ -74,6 +81,12 @@ HYPOTHESIS_TEMPLATES = [
     {"id": "L01", "desc": "Institutional buy streak -> Limit up streak -> KD bull."},
     {"id": "L02", "desc": "Institutional sell streak -> Limit down streak -> KD bear."},
     {"id": "L03", "desc": "Institutional buy streak -> Limit up streak -> Inst sells on same day."},
+    # ── M. 群體行為序列類（v12.2 新增）──
+    {"id": "M01", "desc": "Foreign buy N days, trust follows within D days (consensus formation)."},
+    {"id": "M02", "desc": "Foreign sell N days, margin keeps increasing (divergence danger)."},
+    {"id": "M03", "desc": "Institutions buy together, margin surges (retail chase confirmation)."},
+    {"id": "M04", "desc": "Foreign sells alone while trust stays neutral (weak signal)."},
+    {"id": "M05", "desc": "Foreign sells while margin hits recent high (extreme divergence)."},
 ]
 
 SEQUENCE_PATTERNS_KEYS = [
@@ -89,6 +102,29 @@ PARAM_GRIDS = {
     "bar_body_pct": [0.02, 0.03, 0.05, 0.07],
     "horizon_days": [10, 15, 20, 30, 45, 60],
     "pattern_name": SEQUENCE_PATTERNS_KEYS,
+
+}
+
+# M 類群體行為序列專用參數格網
+M_PARAM_GRIDS = {
+    "leader_days": [2, 3, 5, 8],  # 先動者持續天數
+    "follower_window": [3, 5, 8, 10],  # 後動者觀察窗口
+    "divergence_threshold": [0.5, 0.7, 0.8],  # 背離程度門檻
+    "horizon_days": [10, 15, 20, 30, 45, 60],
+}
+
+# 狀態分層參數格網（T/V/A 八狀態系統）
+STATE_PARAM_GRIDS = {
+    "state_filter": list(range(1, 9)),  # 1-8 狀態過濾
+    "trend_period": [10, 20, 30],  # T 趨勢計算期間
+    "velocity_period": [3, 5, 8],  # V 速度計算期間
+}
+
+# 價格區間框架參數格網
+PRICE_ZONE_GRIDS = {
+    "zone_method": ["percentile", "relative_range"],  # 區間定義方法
+    "lookback_years": [1, 2, 3, 5],  # 歷史回顧期間
+    "zone_thresholds": [[0.1, 0.3, 0.7, 0.9], [0.2, 0.4, 0.6, 0.8]],  # 區間邊界
 }
 
 CROSS_SEQUENCE_PARAM_GRIDS = {
@@ -113,7 +149,16 @@ def generate_batch(
         return []
     rng = random.Random(random_seed or template["id"])
     
-    grids = CROSS_SEQUENCE_PARAM_GRIDS if template["id"].startswith("L") else PARAM_GRIDS
+    # 根據母題類型選擇對應的參數格網
+    if template["id"].startswith("M"):
+        grids = M_PARAM_GRIDS
+    elif template["id"].startswith("L"):
+        grids = CROSS_SEQUENCE_PARAM_GRIDS
+    elif template["id"].startswith("J"):
+        grids = EXTENDED_J_PARAM_GRIDS
+    else:
+        grids = PARAM_GRIDS
+    
     all_combos = list(itertools.product(*grids.values()))
     sampled = rng.sample(all_combos, min(batch_size, len(all_combos)))
     keys = list(grids.keys())

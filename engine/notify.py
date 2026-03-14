@@ -26,19 +26,60 @@ def send_signal(message: str) -> bool:
     return True
 
 
-def build_signal_message(signal: dict[str, Any]) -> str:
-    title_map = {
-        "long": "LONG",
-        "exit": "EXIT",
-        "short": "SHORT",
-    }
-    title = title_map.get(signal["direction"], signal["direction"].upper())
-    stars = "*" * signal.get("stars", 1)
-    lines = [f"[{title} {stars}] {signal['stock_id']}"]
-    for item in signal["signals"]:
-        lines.append(
-            f"- {item['signal_id']} {item['id']} {item['desc']} (hold {item['horizon_days']}d)"
-        )
+def build_signal_message(signal: dict[str, Any], pipeline: str = "long") -> str:
+    """
+    根據管線類型構建不同格式的推播訊息
+    """
+    # 根據管線確定標題和 emoji
+    if pipeline == "long":
+        emoji = "📈"
+        title = "做多訊號"
+    elif pipeline == "exit":
+        emoji = "🔔"
+        title = "賣出訊號"
+    elif pipeline == "short":
+        emoji = "📉"
+        title = "放空訊號"
+    else:
+        emoji = "⚠️"
+        title = signal.get("direction", "long").upper()
+    
+    # 星星評級
+    stars = "⭐" * signal.get("stars", 1)
+    
+    # 股票資訊
+    stock_id = signal['stock_id']
+    
+    # 訊號詳情
+    lines = [f"【{title} {stars}】{stock_id}"]
+    
+    # 檢查是否有時間到期訊號 (group 為 time)
+    time_signal = next((s for s in signal.get("signals", []) if s.get("group") == "time"), None)
+    
+    if time_signal:
+        desc = time_signal.get("desc", "")
+        pnl = time_signal.get("pnl_ext", 0.0)
+        entry_price = time_signal.get("entry_price", 0.0)
+        pnl_str = f"{pnl:+.1%}"
+        lines.append(f"[⏰] {desc}")
+        lines.append(f"• 進場價格：{entry_price:.2f}")
+        lines.append(f"• 目前估計損益：{pnl_str}")
+        
+    # 處理其他技術/籌碼訊號
+    for item in signal.get("signals", []):
+        if item.get("group") == "time":
+            continue
+        signal_type = "A-籌碼" if str(item['id']).startswith(('A', 'K', 'L')) else "技術指標"
+        desc = item['desc']
+        horizon_days = item['horizon_days']
+        lines.append(f"[{signal_type}] {desc}")
+        lines.append(f"• 建議持有：{horizon_days} 個交易日")
+        
+        # 輔助資訊（如果有 PnL 資訊也顯示，例如賣出管線的技術出場）
+        if pipeline == "exit" and "pnl_ext" in item:
+            pnl_str = f"{item['pnl_ext']:+.1%}"
+            lines.append(f"• 估計損益：{pnl_str}")
+
     return "\n".join(lines)
 
 
