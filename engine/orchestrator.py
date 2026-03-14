@@ -24,8 +24,9 @@ MAIN_PID = os.getpid()
 
 def shutdown_handler(signum, frame):
     global SHUTDOWN_REQUESTED
+    import multiprocessing
     # Only the main process should handle this to avoid log spam and redundant cleanup
-    if os.getpid() != MAIN_PID:
+    if multiprocessing.current_process().name != 'MainProcess':
         os._exit(1)
         
     if not SHUTDOWN_REQUESTED:

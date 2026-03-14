@@ -147,12 +147,12 @@ def detect_sequence(chip_series: pd.Series, pattern_name: str, threshold: float 
     sig_arr[chip_series > threshold] = 1
     sig_arr[chip_series < -threshold] = -1
     
-    triggered = pd.Series(False, index=chip_series.index)
+    triggered = np.zeros(len(chip_series), dtype=bool)
     for i in range(n - 1, len(chip_series)):
         window = sig_arr[i - n + 1: i + 1]
         if np.array_equal(window, pattern_arr):
-            triggered.iloc[i] = True
-    return triggered
+            triggered[i] = True
+    return pd.Series(triggered, index=chip_series.index)
 
 
 def calculate_tva_state(
@@ -215,21 +215,14 @@ def detect_group_sequence(
     follower_window: int = 5,
     divergence_threshold: float = 0.7
 ) -> pd.Series:
-    triggered = pd.Series(False, index=leader_series.index)
-    for i in range(leader_days + follower_window - 1, len(leader_series)):
-        leader_window = leader_series.iloc[i - follower_window - leader_days + 1: i - follower_window + 1]
-        leader_direction = leader_window.mean()
-        if abs(leader_direction) < divergence_threshold:
-            continue
-        follower_window_data = follower_series.iloc[i - follower_window + 1: i + 1]
-        follower_avg = follower_window_data.mean()
-        if (leader_direction > 0 and follower_avg > divergence_threshold) or \
-           (leader_direction < 0 and follower_avg < -divergence_threshold):
-            triggered.iloc[i] = True
-        elif (leader_direction > 0 and follower_avg < -divergence_threshold) or \
-             (leader_direction < 0 and follower_avg > divergence_threshold):
-            triggered.iloc[i] = True
-    return triggered
+    leader_mean = leader_series.rolling(leader_days).mean()
+    leader_direction = leader_mean.shift(follower_window)
+    follower_avg = follower_series.rolling(follower_window).mean()
+    
+    valid_leader = leader_direction.abs() >= divergence_threshold
+    triggered = valid_leader & (follower_avg.abs() > divergence_threshold)
+    
+    return triggered.fillna(False)
 
 
 def build_signal_series(stock_id: str, frame: pd.DataFrame, hypothesis: dict[str, Any]) -> pd.Series:
