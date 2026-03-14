@@ -36,15 +36,8 @@ def shutdown_handler(signum, frame):
 
 def check_shutdown():
     if SHUTDOWN_REQUESTED:
-        # Using sys.stderr directly to ensure immediate visibility during hang debugging
-        sys.stderr.write("\n[System] 🔚 程序已執行安全終止流程。\n")
-        sys.stderr.flush()
-        # More aggressive kill of descendant processes if not cleanly closed
-        if sys.platform != "win32":
-            try:
-                os.killpg(os.getpgrp(), signal.SIGKILL)
-            except:
-                pass
+        # Avoid any locks or buffering by using print with flush
+        print("\n[System] 🔚 程序已執行安全終止流程。", flush=True)
         os._exit(0)
 
 # Register signal handler
