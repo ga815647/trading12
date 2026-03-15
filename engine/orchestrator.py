@@ -282,9 +282,15 @@ def main():
             if SHUTDOWN_REQUESTED:
                 logger.warning("Backtesting interrupted. Saving partial results if any.")
             
-            output_path = BACKTEST_DIR / "orchestrator_results.enc"
+            from datetime import datetime as dt
+            chunks_dir = BACKTEST_DIR / "chunks"
+            chunks_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = dt.now().strftime("%Y%m%d_%H%M%S")
+            output_path = chunks_dir / f"batch_{timestamp}.enc"
             save_signal(backtest_results, output_path)
-            logger.info(f"Step Backtest completed. {len(backtest_results)} results saved.")
+            # 同時保留 orchestrator_results.enc 給 diagnose.py 用
+            save_signal(backtest_results, BACKTEST_DIR / "orchestrator_results.enc")
+            logger.info(f"Step Backtest completed. {len(backtest_results)} results saved to {output_path}")
 
             if SHUTDOWN_REQUESTED:
                 check_shutdown()
@@ -292,7 +298,7 @@ def main():
             # 4. Validate
             run_step("Validate", [
                 sys.executable, "engine/validator.py",
-                "--input", str(output_path),
+                "--input-glob", str(BACKTEST_DIR / "chunks" / "*.enc"),
                 "--output", str(SIGNAL_DIR / "library.enc")
             ])
 
@@ -353,6 +359,13 @@ def main():
         sys.exit(1)
 
     logger.info(f"===== Orchestrator Pulse End: {datetime.now().isoformat()} =====")
+    
+    # 清理舊的 chunk 檔案，只保留最近 20 個
+    chunk_files = sorted(chunks_dir.glob("batch_*.enc"), key=lambda f: f.stat().st_mtime)
+    if len(chunk_files) > 20:
+        for old_file in chunk_files[:-20]:
+            old_file.unlink()
+            logger.info(f"Cleaned old chunk: {old_file.name}")
 
 if __name__ == "__main__":
     main()

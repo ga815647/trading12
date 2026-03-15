@@ -172,6 +172,7 @@ def generate_local_factory(max_count: int = 3000):
                 })
 
     # Shuffle to ensure diversity when capped
+    random.seed(42)
     random.shuffle(all_combinations)
     
     selected_combinations = all_combinations[:max_count]

@@ -24,6 +24,10 @@ MIN_RECENT_2Y_WIN_RATE = 0.50
 MIN_RECENT_2Y_TRADES = 5  # 觸發頻率低的策略在近 2 年可能只有 5~9 次，不應因此淘汰
 TIME_DECAY_LAMBDA = 1.0
 
+# 進退場管理
+STOP_LOSS_PCT   = -0.08   # 止損：虧損 8% 出場
+TAKE_PROFIT_PCT =  0.15   # 止盈：獲利 15% 出場
+
 # Edge defense (liquidity). FinMind Volume = shares. 1 lot = 1000 shares.
 SHARES_PER_LOT = 1000
 MIN_DAILY_TURNOVER_NTD = 20000000  # 20M NTD Minimum Daily Turnover
